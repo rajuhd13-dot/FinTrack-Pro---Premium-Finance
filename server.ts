@@ -107,14 +107,21 @@ function getOAuth2Client(req: express.Request) {
 }
 
 app.get('/api/health', (req, res) => {
+  const host = req.get('host') || 'localhost:3000';
+  const protocol = (req.headers['x-forwarded-proto'] as string) || (req.protocol === 'http' && host.includes('localhost') ? 'http' : 'https');
+  const redirectUri = process.env.REDIRECT_URI || `${protocol}://${host}/api/auth/callback`;
+
   res.json({ 
     status: 'ok', 
     sheetId: cachedSheetId,
+    constructedRedirectUri: redirectUri,
     env: { 
       hasClientId: !!process.env.GOOGLE_CLIENT_ID,
       hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
       nodeEnv: process.env.NODE_ENV,
-      isVercel: !!process.env.VERCEL
+      isVercel: !!process.env.VERCEL,
+      appUrl: process.env.APP_URL,
+      redirectUriEnv: process.env.REDIRECT_URI
     }
   });
 });
