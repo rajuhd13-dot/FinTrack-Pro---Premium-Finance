@@ -1092,6 +1092,7 @@ const Dashboard = ({
     const saved = localStorage.getItem('financier_ai_insights');
     return saved ? JSON.parse(saved) : [];
   });
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('financier_ai_insights', JSON.stringify(aiInsights));
@@ -1099,8 +1100,13 @@ const Dashboard = ({
 
   const fetchAIInsights = async () => {
     setIsGeneratingAI(true);
+    setAiError(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("Gemini API Key is missing. Please set it in your environment variables.");
+      }
+      const ai = new GoogleGenAI({ apiKey });
       
       const prompt = `
         You are a professional financial advisor for an app called Financier.
@@ -1115,7 +1121,7 @@ const Dashboard = ({
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-3-flash-preview",
         contents: prompt,
       });
 
@@ -1126,8 +1132,9 @@ const Dashboard = ({
         const insights = jsonMatch ? JSON.parse(jsonMatch[0]) : [text];
         setAiInsights(insights);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('AI Insights failed', e);
+      setAiError(e?.message || "Failed to generate insights.");
     } finally {
       setIsGeneratingAI(false);
     }
@@ -1319,7 +1326,12 @@ const Dashboard = ({
             </button>
           </div>
           <div className="grid gap-3">
-            {aiInsights.length > 0 ? (
+            {aiError ? (
+              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 flex gap-3 items-start">
+                <AlertCircle size={20} className="text-red-500 shrink-0" />
+                <p className="text-sm text-red-700 font-medium leading-relaxed">{aiError}</p>
+              </div>
+            ) : aiInsights.length > 0 ? (
               aiInsights.map((insight, idx) => (
                 <motion.div 
                   key={idx}
