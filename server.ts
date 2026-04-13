@@ -244,9 +244,12 @@ app.post('/api/sync-to-sheet', async (req, res) => {
     });
 
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error appending to sheet:', error);
-    res.status(500).json({ error: 'Failed to sync to Google Sheets' });
+    if (error.response) {
+      console.error('API Error Details:', JSON.stringify(error.response.data, null, 2));
+    }
+    res.status(500).json({ error: 'Failed to sync to Google Sheets', details: error.message });
   }
 });
 
@@ -377,7 +380,10 @@ app.post('/api/sync-user', async (req, res) => {
 
       res.json({ success: true });
     } catch (error: any) {
-      console.error('Error updating profile in sheet:', error?.response?.data || error);
+      console.error('Error updating profile in sheet:', error);
+      if (error.response) {
+        console.error('Sheets API Error Details (Update Profile):', JSON.stringify(error.response.data, null, 2));
+      }
       res.status(500).json({ error: 'Failed to update profile in Google Sheets' });
     }
   });
@@ -523,7 +529,10 @@ app.post('/api/sync-user', async (req, res) => {
         tokens: oauth2Client.credentials
       });
     } catch (error: any) {
-      console.error('Error uploading to drive:', error?.response?.data || error);
+      console.error('Error uploading to drive:', error);
+      if (error.response) {
+        console.error('Drive API Error Details:', JSON.stringify(error.response.data, null, 2));
+      }
       res.status(500).json({ error: error?.message || 'Failed to upload to Google Drive' });
     }
   });
