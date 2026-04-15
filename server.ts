@@ -212,11 +212,11 @@ function getOAuth2Client(req: express.Request) {
   );
 
   // Handle automatic token refresh
-  client.on('tokens', (tokens) => {
-    if (tokens.refresh_token) {
-      console.log('New refresh token received');
+  client.on('tokens', async (tokens) => {
+    if (tokens.refresh_token || tokens.access_token) {
+      console.log('New tokens received from refresh event');
+      await saveMasterTokens(tokens);
     }
-    console.log('Access token refreshed');
   });
 
   return client;
