@@ -725,6 +725,19 @@ const INITIAL_TRANSACTIONS = [];
 
 // --- Components ---
 
+const Logo = ({ className, iconSize = 24, showText = true }: { className?: string, iconSize?: number, showText?: boolean }) => (
+  <div className={cn("flex items-center gap-2.5", className)}>
+    <div className="w-10 h-10 premium-gradient rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+      <TrendingUp size={iconSize} className="text-white" />
+    </div>
+    {showText && (
+      <span className="text-xl font-display font-bold text-slate-900 tracking-tight">
+        Financier
+      </span>
+    )}
+  </div>
+);
+
 const ScreenWrapper = ({ children }: { children: React.ReactNode }) => (
   <motion.div
     initial={{ opacity: 0, scale: 0.95 }}
@@ -770,6 +783,7 @@ const Header = ({
             >
               <Menu size={20} className="text-slate-700" />
             </button>
+            <Logo showText={false} className="lg:hidden" />
             <h1 className="text-xl font-display font-bold text-slate-900 truncate">{title}</h1>
           </>
         ) : (
@@ -919,7 +933,10 @@ const Sidebar = ({
 }) => {
   const sidebarContent = (
     <div className="h-full flex flex-col">
-      <div className="flex items-center gap-4 mb-12">
+      <div className="mb-10 px-2">
+        <Logo />
+      </div>
+      <div className="flex items-center gap-4 mb-10 p-2 bg-slate-50 rounded-2xl border border-slate-100">
         <div className="w-14 h-14 rounded-full overflow-hidden bg-slate-100 shadow-sm">
           {profile.avatar ? (
             <img src={profile.avatar} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -1058,6 +1075,7 @@ const Dashboard = ({
   isSyncing,
   budgets,
   onUpdateBudgets,
+  onSaveBudgets,
   profile,
   setPendingTransactionType,
   setActiveTab
@@ -1074,6 +1092,7 @@ const Dashboard = ({
   isSyncing: boolean;
   budgets: Budget[];
   onUpdateBudgets: (budgets: Budget[]) => void;
+  onSaveBudgets: (budgets: Budget[]) => void;
   profile: any;
   setPendingTransactionType: (type: 'expense' | 'income' | null) => void;
   setActiveTab: (tab: 'dashboard' | 'summary' | 'history' | 'profile' | 'add') => void;
@@ -1678,7 +1697,10 @@ const Dashboard = ({
                 
                 <div className="p-6 bg-slate-50 border-t border-slate-100">
                   <button 
-                    onClick={() => setIsBudgetModalOpen(false)}
+                    onClick={() => {
+                      onSaveBudgets(budgets);
+                      setIsBudgetModalOpen(false);
+                    }}
                     className="w-full py-4 premium-gradient text-white rounded-2xl font-bold shadow-lg shadow-indigo-200"
                   >
                     Save & Close
@@ -2102,9 +2124,10 @@ const Transactions = ({
                   </p>
                   <button 
                     onClick={(e) => { e.stopPropagation(); onDelete(tx.id); }}
-                    className="p-2 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 bg-red-50 rounded-full hover:bg-red-100"
+                    className="p-2.5 text-slate-400 hover:text-red-500 transition-colors bg-slate-50 rounded-xl hover:bg-red-50 border border-slate-100"
+                    title="Delete Transaction"
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={18} />
                   </button>
                   <ChevronRight size={16} className="text-slate-300 group-hover:text-indigo-400 transition-colors" />
                 </div>
@@ -2462,14 +2485,17 @@ const Profile = ({ profile, onUpdate, googleTokens, setGoogleTokens, showToast }
   );
 };
 
-const LoginScreen = ({ onLogin }: { onLogin: (name: string, email: string, pass: string) => void }) => {
+const LoginScreen = ({ onLogin, onForgotPassword }: { onLogin: (name: string, email: string, pass: string) => void, onForgotPassword: () => void }) => {
   const [method, setMethod] = useState<'initial' | 'gmail' | 'phone'>('gmail');
   const [value, setValue] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleLogin = () => {
-    if (value === 'rajuhd13@gmail.com' && password === 'Raju@2348') {
+    // Check local storage for updated password first
+    const storedPass = localStorage.getItem('financier_app_password') || 'Raju@2348';
+    
+    if (value === 'rajuhd13@gmail.com' && password === storedPass) {
       setError('');
       const derivedName = 'Raju';
       onLogin(derivedName, value, password);
@@ -2491,9 +2517,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (name: string, email: string, pass:
           transition={{ duration: 0.6, ease: "easeOut" }}
           className="mb-6 text-center"
         >
-          <div className="w-16 h-16 bg-white/10 rounded-2xl mx-auto mb-4 flex items-center justify-center backdrop-blur-md border border-white/20 shadow-2xl">
-            <Wallet size={32} className="text-white" />
-          </div>
+          <Logo className="justify-center mb-4" iconSize={32} showText={false} />
           <h1 className="text-4xl font-display font-bold text-white mb-2 tracking-tight">Financier</h1>
           <p className="text-slate-300 font-medium text-base">Master your wealth with elegance.</p>
         </motion.div>
@@ -2562,6 +2586,14 @@ const LoginScreen = ({ onLogin }: { onLogin: (name: string, email: string, pass:
                 {error && (
                   <p className="text-pink-400 text-sm font-medium text-center">{error}</p>
                 )}
+                <div className="flex justify-end">
+                  <button 
+                    onClick={onForgotPassword}
+                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
                 <button 
                   onClick={handleLogin}
                   className="w-full py-5 premium-gradient text-white rounded-[28px] font-bold text-xl shadow-xl shadow-indigo-500/20 hover:opacity-90 transition-opacity"
@@ -2586,12 +2618,165 @@ const LoginScreen = ({ onLogin }: { onLogin: (name: string, email: string, pass:
   );
 };
 
+const ForgotPasswordScreen = ({ onBack, onResetSuccess }: { onBack: () => void, onResetSuccess: (newPass: string) => void }) => {
+  const [step, setStep] = useState<'verify' | 'reset'>('verify');
+  const [email, setEmail] = useState('rajuhd13@gmail.com');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleGoogleVerify = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const resp = await fetch('/api/auth/google/url');
+      const { url } = await resp.json();
+      
+      const width = 500;
+      const height = 600;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      
+      const authWindow = window.open(url, 'Google Auth', `width=${width},height=${height},left=${left},top=${top}`);
+      
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.data.type === 'OAUTH_AUTH_SUCCESS') {
+          window.removeEventListener('message', handleMessage);
+          const tokens = event.data.tokens;
+          
+          // Verify if the email matches
+          // We can't easily get email from tokens here without another API call or decoding ID token
+          // But we can try to reset password with these tokens, the server will check the email
+          setStep('reset');
+          localStorage.setItem('temp_reset_tokens', JSON.stringify(tokens));
+          setLoading(false);
+        }
+      };
+      
+      window.addEventListener('message', handleMessage);
+    } catch (e) {
+      setError('Failed to initiate Google verification');
+      setLoading(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const tokens = JSON.parse(localStorage.getItem('temp_reset_tokens') || '{}');
+      const response = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email, 
+          newPassword,
+          tokens
+        })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        localStorage.removeItem('temp_reset_tokens');
+        localStorage.setItem('financier_app_password', newPassword);
+        onResetSuccess(newPassword);
+      } else {
+        setError(data.error || 'Failed to reset password');
+      }
+    } catch (e) {
+      setError('An error occurred during reset');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-900 relative overflow-y-auto py-4">
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/30 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-pink-600/30 rounded-full blur-[120px] pointer-events-none" />
+      
+      <div className="flex-1 flex flex-col justify-center px-8 z-10 max-w-md mx-auto w-full">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-panel-dark rounded-[28px] p-6 shadow-2xl"
+        >
+          <div className="flex items-center gap-2 mb-6">
+            <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <ChevronRight size={20} className="text-white rotate-180" />
+            </button>
+            <h2 className="text-xl font-bold text-white">Reset Password</h2>
+          </div>
+
+          <AnimatePresence mode="wait">
+            {step === 'verify' ? (
+              <motion.div key="verify" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                <p className="text-slate-300 text-sm">To reset your password, we need to verify your identity via your connected Google account.</p>
+                <button 
+                  onClick={handleGoogleVerify}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-3 p-5 bg-white/10 rounded-[24px] border border-white/10 font-bold text-white hover:bg-white/20 transition-all disabled:opacity-50"
+                >
+                  {loading ? <RefreshCw className="animate-spin" /> : <Globe className="text-indigo-400" />}
+                  Verify with Google
+                </button>
+              </motion.div>
+            ) : (
+              <motion.div key="reset" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full p-5 bg-white/5 rounded-[24px] border border-white/10 focus:border-indigo-500 outline-none font-bold text-white transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full p-5 bg-white/5 rounded-[24px] border border-white/10 focus:border-indigo-500 outline-none font-bold text-white transition-all"
+                  />
+                </div>
+                {error && <p className="text-pink-400 text-sm font-medium text-center">{error}</p>}
+                <button 
+                  onClick={handleReset}
+                  disabled={loading}
+                  className="w-full py-5 premium-gradient text-white rounded-[24px] font-bold text-xl shadow-xl hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {loading ? <RefreshCw className="animate-spin mx-auto" /> : 'Set New Password'}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
 // --- Main App ---
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     return localStorage.getItem('financier_is_logged_in') === 'true';
   });
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('financier_is_logged_in', isLoggedIn ? 'true' : 'false');
@@ -2599,18 +2784,68 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'summary' | 'history' | 'profile' | 'add'>('dashboard');
   const [pendingTransactionType, setPendingTransactionType] = useState<'expense' | 'income' | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [budgets, setBudgets] = useState<Budget[]>(() => {
-    const saved = localStorage.getItem('financier_budgets');
-    return saved ? JSON.parse(saved) : [
-      { category: 'Food & Grocery', amount: 15000 },
-      { category: 'Shopping', amount: 10000 },
-      { category: 'Health & Medical', amount: 5000 }
-    ];
-  });
+  const [budgets, setBudgets] = useState<Budget[]>([]);
 
-  useEffect(() => {
-    localStorage.setItem('financier_budgets', JSON.stringify(budgets));
-  }, [budgets]);
+  const handleSyncBudgets = async (manualTokens?: any) => {
+    const tokensToUse = manualTokens || googleTokens;
+    console.log('Syncing budgets...', { hasTokens: !!tokensToUse, isConnected: isGoogleConnected });
+    // If no tokens in state, we still try if we know we're connected (server will use master tokens)
+    if (!tokensToUse && !isGoogleConnected) return;
+
+    try {
+      const headers: any = {};
+      if (tokensToUse?.access_token) {
+        headers['Authorization'] = `Bearer ${tokensToUse.access_token}`;
+      }
+
+      const response = await fetch('/api/fetch-budgets', { headers });
+      if (response.status === 401) {
+        setGoogleTokens(null);
+        localStorage.removeItem('googleTokens');
+        return;
+      }
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setBudgets(data);
+          if (data.length > 0) {
+            showToast('Budgets synced from Google Sheets', 'success');
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch budgets', e);
+    }
+  };
+
+  const handleSaveBudgets = async (newBudgets: Budget[]) => {
+    if (!isGoogleConnected) {
+      showToast('Connect Google Sheets to save budgets permanently.', 'info');
+      return;
+    }
+    
+    showToast('Saving budgets to Google Sheets...', 'info');
+    try {
+      const response = await fetch('/api/save-budgets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${googleTokens?.access_token || ''}`
+        },
+        body: JSON.stringify({ budgets: newBudgets })
+      });
+      
+      if (response.ok) {
+        showToast('Budgets saved successfully!', 'success');
+        addNotification('Budgets Updated', 'Your budget settings have been saved to Google Sheets.', 'success');
+      } else {
+        throw new Error('Failed to save budgets');
+      }
+    } catch (e: any) {
+      console.error('Failed to save budgets', e);
+      showToast(`Failed to save budgets: ${e.message}`, 'error');
+    }
+  };
 
   const [transactions, setTransactions] = useState(() => {
     const saved = localStorage.getItem('financier_transactions');
@@ -2676,6 +2911,17 @@ export default function App() {
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [googleTokens, setGoogleTokens] = useState<any>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    isOpen: boolean;
+    transactionId: string | number | null;
+    code: string;
+    input: string;
+  }>({
+    isOpen: false,
+    transactionId: null,
+    code: '',
+    input: ''
+  });
   const [notifications, setNotifications] = useState<any[]>(() => {
     const saved = localStorage.getItem('financier_notifications');
     return saved ? JSON.parse(saved) : [
@@ -2717,6 +2963,7 @@ export default function App() {
             setTimeout(() => {
               handleSyncFromSheet(tokens);
               handleSyncProfile(tokens);
+              handleSyncBudgets(tokens);
             }, 1000);
           }
         } catch (e) {
@@ -2733,6 +2980,7 @@ export default function App() {
               setTimeout(() => {
                 handleSyncFromSheet();
                 handleSyncProfile();
+                handleSyncBudgets();
               }, 1000);
             }
           }
@@ -2795,7 +3043,7 @@ export default function App() {
     setTransactions([txWithId, ...transactions]);
     setActiveTab('dashboard');
 
-    if (isGoogleConnected) {
+    if (googleTokens) {
       setIsSyncing(true);
       // Optimistic update - don't wait for sync
       fetch('/api/sync-to-sheet', {
@@ -2808,10 +3056,16 @@ export default function App() {
       }).then(async (response) => {
         setIsSyncing(false);
         if (!response.ok) {
-          const errData = await response.json();
-          setTransactions(originalTransactions);
-          showToast(`Sync failed: ${errData.error || 'Unknown error'}`, 'error');
-          addNotification('Sync Failed', 'Could not sync transaction to Google Sheets.', 'alert');
+          if (response.status === 429) {
+            setTransactions(originalTransactions);
+            showToast('Google Sheets rate limit exceeded. Please try again in a few minutes.', 'error');
+            addNotification('Sync Failed', 'Rate limit exceeded.', 'alert');
+          } else {
+            const errData = await response.json();
+            setTransactions(originalTransactions);
+            showToast(`Sync failed: ${errData.error || 'Unknown error'}`, 'error');
+            addNotification('Sync Failed', 'Could not sync transaction to Google Sheets.', 'alert');
+          }
         } else {
           showToast('Successfully synced to Google Sheets!', 'success');
           addNotification('Sync Successful', `Transaction "${txWithId.category}" synced to Sheets.`, 'success');
@@ -2828,26 +3082,56 @@ export default function App() {
     }
   };
 
-  const handleDeleteTransaction = async (id: string | number) => {
-    const originalTransactions = [...transactions];
+  const handleDeleteTransaction = (id: string | number) => {
     const txToDelete = transactions.find(t => t.id === id);
-    setTransactions(transactions.filter(t => t.id !== id));
+    if (!txToDelete) return;
+
+    // Generate a random 4-digit code
+    const confirmationCode = Math.floor(1000 + Math.random() * 9000).toString();
+    setDeleteConfirmation({
+      isOpen: true,
+      transactionId: id,
+      code: confirmationCode,
+      input: ''
+    });
+  };
+
+  const confirmDeleteTransaction = async () => {
+    const { transactionId, code, input } = deleteConfirmation;
+    if (input !== code) {
+      showToast('Incorrect confirmation code.', 'error');
+      return;
+    }
+
+    const txToDelete = transactions.find(t => t.id === transactionId);
+    if (!txToDelete) {
+      setDeleteConfirmation(prev => ({ ...prev, isOpen: false }));
+      return;
+    }
+
+    const originalTransactions = [...transactions];
+    setTransactions(transactions.filter(t => t.id !== transactionId));
+    setDeleteConfirmation(prev => ({ ...prev, isOpen: false }));
     
-    if (isGoogleConnected && txToDelete?.id) {
+    if (googleTokens) {
       setIsSyncing(true);
       // Optimistic update - don't wait for sync
       fetch('/api/delete-from-sheet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          transactionId: id,
+          transaction: {
+            date: txToDelete.date,
+            category: txToDelete.category,
+            amount: txToDelete.amount
+          },
           tokens: googleTokens 
         })
       }).then(async (response) => {
         setIsSyncing(false);
         if (!response.ok) {
           setTransactions(originalTransactions);
-          showToast('Failed to delete from Sheets. It might already be gone.', 'error');
+          showToast('Failed to delete from Sheets.', 'error');
           addNotification('Delete Failed', 'Could not delete transaction from Google Sheets.', 'alert');
         } else {
           showToast('Deleted from Google Sheets!', 'success');
@@ -2865,15 +3149,16 @@ export default function App() {
 
   const handleSyncProfile = async (manualTokens?: any) => {
     const tokensToUse = manualTokens || googleTokens;
-    if (!tokensToUse || !profile.email) return;
+    if ((!tokensToUse && !isGoogleConnected) || !profile.email) return;
     
     try {
+      const storedPass = localStorage.getItem('financier_app_password') || 'Raju@2348';
       const response = await fetch('/api/sync-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           email: profile.email, 
-          password: 'Raju@2348', // Using the master password
+          password: storedPass, // Using the stored password
           tokens: tokensToUse 
         })
       });
@@ -2892,7 +3177,13 @@ export default function App() {
 
   const handleSyncFromSheet = async (manualTokens?: any) => {
     const tokensToUse = manualTokens || googleTokens;
+    console.log('Syncing transactions from sheet...', { hasTokens: !!tokensToUse, isConnected: isGoogleConnected });
     
+    if (!tokensToUse && !isGoogleConnected) {
+      console.log('Skipping sync: No Google tokens available and not connected');
+      return;
+    }
+
     setIsSyncing(true);
     showToast('Fetching latest data from Sheets...', 'info');
     try {
@@ -2904,6 +3195,16 @@ export default function App() {
       
       setIsSyncing(false);
       if (!response.ok) {
+        if (response.status === 401) {
+          setGoogleTokens(null);
+          localStorage.removeItem('googleTokens');
+          showToast('Google session expired. Please reconnect Google Sheets.', 'error');
+          return;
+        }
+        if (response.status === 429) {
+          showToast('Google Sheets rate limit exceeded. Please try again in a few minutes.', 'error');
+          return;
+        }
         let errText = await response.text();
         try {
           const errJson = JSON.parse(errText);
@@ -2981,50 +3282,62 @@ export default function App() {
         </div>
       )}
 
-      {!isLoggedIn ? (
-        <div className="w-full max-w-md mx-auto min-h-screen flex flex-col">
-          <LoginScreen onLogin={async (name, email, pass) => {
-            if (pass !== 'Raju@2348') {
-              showToast('Invalid password. Please try again.', 'error');
-              return;
-            }
-            
-            setIsLoggedIn(true);
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirmation.isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white w-full max-w-sm rounded-[32px] overflow-hidden shadow-2xl"
+            >
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <Trash2 size={32} />
+                </div>
+                <h3 className="text-xl font-display font-bold text-slate-900 mb-2">Delete Transaction?</h3>
+                <p className="text-sm text-slate-500 mb-8">This action cannot be undone. It will also be removed from Google Sheets.</p>
+                
+                <div className="bg-slate-50 p-6 rounded-2xl mb-8 border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Enter confirmation code</p>
+                  <p className="text-3xl font-display font-bold text-indigo-600 mb-4 tracking-widest">{deleteConfirmation.code}</p>
+                  <input
+                    type="number"
+                    value={deleteConfirmation.input}
+                    onChange={(e) => setDeleteConfirmation(prev => ({ ...prev, input: e.target.value }))}
+                    placeholder="Type code here"
+                    className="w-full text-center p-3 bg-white rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-bold text-lg"
+                    autoFocus
+                  />
+                </div>
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setDeleteConfirmation(prev => ({ ...prev, isOpen: false }))}
+                    className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeleteTransaction}
+                    className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-bold shadow-lg shadow-red-500/20 hover:bg-red-600 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-            // Give it a moment to settle
-            setTimeout(() => {
-              handleSyncFromSheet();
-            }, 500);
-
-            // Sync user to Google Sheets and get their profile
-            try {
-              const response = await fetch('/api/sync-user', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  email, 
-                  password: pass, 
-                  name: profile.name === 'John Doe' ? name : profile.name,
-                  avatar: profile.avatar
-                })
-              });
-              const data = await response.json();
-              if (data.success && data.profile) {
-                setProfile({
-                  name: data.profile.name || name,
-                  email: email,
-                  avatar: data.profile.avatar || null
-                });
-              } else {
-                setProfile(p => ({ ...p, name: p.name === 'John Doe' ? name : p.name, email }));
-              }
-            } catch (e) {
-              console.error('Failed to sync user to sheet', e);
-              setProfile(p => ({ ...p, name: p.name === 'John Doe' ? name : p.name, email }));
-            }
-          }} />
-        </div>
-      ) : (
+      {isLoggedIn ? (
         <>
           <Sidebar 
             isOpen={isSidebarOpen} 
@@ -3057,6 +3370,7 @@ export default function App() {
                     isSyncing={isSyncing}
                     budgets={budgets}
                     onUpdateBudgets={setBudgets}
+                    onSaveBudgets={handleSaveBudgets}
                     profile={profile}
                     setPendingTransactionType={setPendingTransactionType}
                     setActiveTab={setActiveTab}
@@ -3141,6 +3455,74 @@ export default function App() {
 
           </div>
         </>
+      ) : showForgotPassword ? (
+        <ForgotPasswordScreen 
+          onBack={() => setShowForgotPassword(false)} 
+          onResetSuccess={(newPass) => {
+            showToast('Password reset successfully! Please sign in.', 'success');
+            setShowForgotPassword(false);
+          }}
+        />
+      ) : (
+        <div className="w-full max-w-md mx-auto min-h-screen flex flex-col">
+          <LoginScreen 
+            onForgotPassword={() => setShowForgotPassword(true)}
+            onLogin={async (name, email, pass) => {
+              const storedPass = localStorage.getItem('financier_app_password') || 'Raju@2348';
+              
+              // If we have Google tokens, prioritize server-side validation against Excel
+              if (googleTokens) {
+                showToast('Verifying with Google Sheets...', 'info');
+                try {
+                  const response = await fetch('/api/sync-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                      email, 
+                      password: pass, 
+                      tokens: googleTokens,
+                      name: profile.name === 'John Doe' ? name : profile.name,
+                      avatar: profile.avatar
+                    })
+                  });
+                  const data = await response.json();
+                  
+                  if (response.ok && data.success) {
+                    setIsLoggedIn(true);
+                    localStorage.setItem('financier_app_password', pass);
+                    if (data.profile) {
+                      setProfile({
+                        name: data.profile.name || name,
+                        email: email,
+                        avatar: data.profile.avatar || null
+                      });
+                    }
+                    // After successful login sync, fetch budgets and transactions too
+                    handleSyncBudgets(googleTokens);
+                    handleSyncFromSheet(googleTokens);
+                    showToast('Login successful! Data synced.', 'success');
+                    return;
+                  } else {
+                    showToast(data.error || 'Invalid password', 'error');
+                    return;
+                  }
+                } catch (e) {
+                  console.error('Login sync failed', e);
+                  // Fallback to local check if network fails
+                }
+              }
+
+              // Fallback to local check (or if sync failed)
+              if (pass === storedPass) {
+                setIsLoggedIn(true);
+                setProfile(p => ({ ...p, name: p.name === 'John Doe' ? name : p.name, email }));
+                showToast('Logged in locally.', 'info');
+              } else {
+                showToast('Invalid password. If you reset it, please connect Google first.', 'error');
+              }
+            }} 
+          />
+        </div>
       )}
     </div>
   );
