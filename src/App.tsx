@@ -2479,35 +2479,6 @@ const Profile = ({ profile, onUpdate, googleTokens, setGoogleTokens, showToast }
             </div>
           </div>
 
-          {googleTokens?.refresh_token && (
-            <div className="p-6 bg-emerald-50 rounded-[32px] border border-emerald-100/50">
-              <h4 className="text-sm font-bold text-emerald-600 mb-2 uppercase tracking-wider flex items-center gap-2">
-                <ShieldCheck size={16} />
-                Google Refresh Token
-              </h4>
-              <p className="text-[10px] text-emerald-600/70 mb-3 leading-tight">
-                Copy this code and add it to Vercel Environment Variables as <b>GOOGLE_REFRESH_TOKEN</b> to keep your session active.
-              </p>
-              <div className="flex gap-2">
-                <input 
-                  type="password" 
-                  readOnly 
-                  value={googleTokens.refresh_token} 
-                  className="flex-1 bg-white border border-emerald-100 rounded-xl px-3 py-2 text-xs font-mono text-slate-600 outline-none"
-                />
-                <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(googleTokens.refresh_token);
-                    showToast('Token copied to clipboard!', 'success');
-                  }}
-                  className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-emerald-600 transition-colors"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          )}
-
           <button
             onClick={() => onUpdate({ name, avatar })}
             disabled={isUploading}
@@ -2936,13 +2907,30 @@ export default function App() {
     const [monthName, year] = selectedMonth.split(' ');
     const monthNum = monthMap[monthName];
 
-    return transactions.filter(t => {
+    const filtered = transactions.filter(t => {
       const matchesSearch = (t.purpose || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (t.category || '').toLowerCase().includes(searchQuery.toLowerCase());
       
       // Date format: DD-MM-YYYY
       const matchesMonth = t.date.includes(`-${monthNum}-${year}`); 
       return matchesSearch && matchesMonth;
+    });
+
+    // Sort by date and time descending
+    return filtered.sort((a, b) => {
+      const parseDate = (dateStr: string) => {
+        try {
+          // Format: "DD-MM-YYYY, HH:mm"
+          const [datePart, timePart] = dateStr.split(', ');
+          const [day, month, year] = datePart.split('-').map(Number);
+          if (!timePart) return new Date(year, month - 1, day).getTime();
+          const [hours, minutes] = timePart.split(':').map(Number);
+          return new Date(year, month - 1, day, hours, minutes).getTime();
+        } catch (e) {
+          return 0;
+        }
+      };
+      return parseDate(b.date) - parseDate(a.date);
     });
   }, [transactions, searchQuery, selectedMonth]);
 
