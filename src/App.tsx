@@ -1077,7 +1077,8 @@ const Dashboard = ({
   onSaveBudgets,
   profile,
   setPendingTransactionType,
-  setActiveTab
+  setActiveTab,
+  showToast
 }: { 
   transactions: typeof INITIAL_TRANSACTIONS; 
   onMenuClick: () => void;
@@ -1095,6 +1096,7 @@ const Dashboard = ({
   profile: any;
   setPendingTransactionType: (type: 'expense' | 'income' | null) => void;
   setActiveTab: (tab: 'dashboard' | 'summary' | 'history' | 'profile' | 'add') => void;
+  showToast: (text: string, type: 'success' | 'error' | 'info') => void;
   key?: string;
 }) => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1127,15 +1129,20 @@ const Dashboard = ({
       const ai = new GoogleGenAI({ apiKey });
       
       const prompt = `
-        You are a professional financial advisor for an app called Financier.
-        Analyze the following financial data for ${profile.name}:
+        You are an expert financial advisor for an app called Financier.
+        Analyze this financial data for ${profile.name}:
         
-        Transactions (last few): ${JSON.stringify(transactions.slice(0, 20))}
+        Transactions: ${JSON.stringify(transactions.slice(0, 30))}
         Budgets: ${JSON.stringify(budgets)}
         
-        Provide 3 concise, actionable financial insights or tips based on their spending and budgets. 
-        Keep them encouraging, professional, and very short (max 15 words each).
-        Format the response strictly as a JSON array of strings.
+        Provide exactly 3 highly actionable, specific financial tips. 
+        Focus on:
+        1. Spending patterns (if they are overspending in a category).
+        2. Budget adherence.
+        3. A positive reinforcement or a specific saving goal.
+        
+        Keep each tip under 12 words.
+        Format: JSON array of strings.
       `;
 
       const response = await ai.models.generateContent({
@@ -1149,10 +1156,12 @@ const Dashboard = ({
         const jsonMatch = text.match(/\[.*\]/s);
         const insights = jsonMatch ? JSON.parse(jsonMatch[0]) : [text];
         setAiInsights(insights);
+        showToast('AI Insights updated!', 'success');
       }
     } catch (e: any) {
       console.error('AI Insights failed', e);
       setAiError(e?.message || "Failed to generate insights.");
+      showToast('AI Insight generation failed', 'error');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -2470,6 +2479,35 @@ const Profile = ({ profile, onUpdate, googleTokens, setGoogleTokens, showToast }
             </div>
           </div>
 
+          {googleTokens?.refresh_token && (
+            <div className="p-6 bg-emerald-50 rounded-[32px] border border-emerald-100/50">
+              <h4 className="text-sm font-bold text-emerald-600 mb-2 uppercase tracking-wider flex items-center gap-2">
+                <ShieldCheck size={16} />
+                Google Refresh Token
+              </h4>
+              <p className="text-[10px] text-emerald-600/70 mb-3 leading-tight">
+                Copy this code and add it to Vercel Environment Variables as <b>GOOGLE_REFRESH_TOKEN</b> to keep your session active.
+              </p>
+              <div className="flex gap-2">
+                <input 
+                  type="password" 
+                  readOnly 
+                  value={googleTokens.refresh_token} 
+                  className="flex-1 bg-white border border-emerald-100 rounded-xl px-3 py-2 text-xs font-mono text-slate-600 outline-none"
+                />
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(googleTokens.refresh_token);
+                    showToast('Token copied to clipboard!', 'success');
+                  }}
+                  className="bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-emerald-600 transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          )}
+
           <button
             onClick={() => onUpdate({ name, avatar })}
             disabled={isUploading}
@@ -3375,6 +3413,7 @@ export default function App() {
                     profile={profile}
                     setPendingTransactionType={setPendingTransactionType}
                     setActiveTab={setActiveTab}
+                    showToast={showToast}
                   />
                 )}
                 {activeTab === 'summary' && (
