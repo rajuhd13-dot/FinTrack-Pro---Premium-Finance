@@ -2813,8 +2813,13 @@ export default function App() {
           }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch budgets', e);
+      if (e.message === 'Failed to fetch') {
+        showToast('Network error: Could not reach the server. Please check your connection.', 'error');
+      } else {
+        showToast(`Failed to fetch budgets: ${e.message}`, 'error');
+      }
     }
   };
 
@@ -3170,8 +3175,13 @@ export default function App() {
           avatar: data.profile.avatar || null
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to sync profile', e);
+      if (e.message === 'Failed to fetch') {
+        showToast('Network error: Could not reach the server. Please check your connection.', 'error');
+      } else {
+        showToast(`Failed to sync profile: ${e.message}`, 'error');
+      }
     }
   };
 
@@ -3242,7 +3252,11 @@ export default function App() {
     } catch (e: any) {
       setIsSyncing(false);
       console.error('Failed to fetch from sheet', e);
-      showToast(`Failed to sync: ${e.message}`, 'error');
+      if (e.message === 'Failed to fetch') {
+        showToast('Network error: Could not reach the server. Please check your connection.', 'error');
+      } else {
+        showToast(`Failed to sync: ${e.message}`, 'error');
+      }
       addNotification('Sync Failed', `Error: ${e.message}`, 'alert');
     }
   };

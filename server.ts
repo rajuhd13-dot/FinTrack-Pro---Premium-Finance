@@ -13,6 +13,7 @@ const __dirname = path.dirname(__filename);
 
 // Token storage for persistence across devices
 const TOKEN_PATH = path.join(__dirname, 'tokens.json');
+let cachedSheetId: string | null = null;
 
 async function getMasterTokens() {
   try {
@@ -102,6 +103,10 @@ async function ensureSheetsExist(sheets: any, spreadsheetId: string) {
 }
 
 async function getWorkingSheetId(oauth2Client: any) {
+  if (cachedSheetId) {
+    return cachedSheetId;
+  }
+
   const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
   const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
@@ -118,6 +123,7 @@ async function getWorkingSheetId(oauth2Client: any) {
       const sheetId = res.data.files[0].id!;
       console.log(`Found existing sheet: ${sheetId}`);
       await ensureSheetsExist(sheets, sheetId);
+      cachedSheetId = sheetId;
       return sheetId;
     }
 
@@ -125,6 +131,7 @@ async function getWorkingSheetId(oauth2Client: any) {
     try {
       console.log('Trying hardcoded sheet ID...');
       await ensureSheetsExist(sheets, TARGET_SHEET_ID);
+      cachedSheetId = TARGET_SHEET_ID;
       return TARGET_SHEET_ID;
     } catch (e) {
       console.log('Hardcoded sheet ID failed or inaccessible.');
@@ -146,6 +153,7 @@ async function getWorkingSheetId(oauth2Client: any) {
     const newSheetId = spreadsheet.data.spreadsheetId;
     if (newSheetId) {
       await ensureSheetsExist(sheets, newSheetId);
+      cachedSheetId = newSheetId;
       return newSheetId;
     }
     throw new Error('Failed to create or find a working sheet');
@@ -850,39 +858,57 @@ app.post('/api/save-budgets', express.json(), async (req, res) => {
   }
 });
 
-// Vite middleware - only in local development
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-  (async () => {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
+async function startServer() {
+  // Vite middleware - only in local development
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+      console.log('Vite middleware loaded');
+    } catch (e) {
+      console.error('Failed to load Vite middleware:', e);
+    }
+  } else if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
+    // Static serving for local production test
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
     });
-    app.use(vite.middlewares);
-  })();
-} else if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
-  // Static serving for local production test
-  const distPath = path.join(process.cwd(), 'dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
+  }
+
+  // Global error handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Global Error Handler:', err);
+    res.status(500).json({ 
+      error: 'Internal Server Error', 
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   });
+
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
-// Global error handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Global Error Handler:', err);
-  res.status(500).json({ 
-    error: 'Internal Server Error', 
-    message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-  });
+// Global error handlers to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-if (!process.env.VERCEL) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception thrown:', err);
+});
+
+startServer().catch(err => {
+  console.error('Failed to start server:', err);
+});
 
 export default app;
