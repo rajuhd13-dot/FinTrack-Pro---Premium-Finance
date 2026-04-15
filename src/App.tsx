@@ -996,14 +996,13 @@ const Sidebar = ({
         </button>
         <button 
           onClick={onConnectGoogle}
-          disabled={isGoogleConnected}
           className={cn(
             "flex items-center gap-4 w-full p-4 rounded-2xl transition-all group mt-2",
             isGoogleConnected ? "text-emerald-600 bg-emerald-50" : "text-slate-600 hover:bg-slate-50"
           )}
         >
           <FileSpreadsheet size={20} className={cn(isGoogleConnected ? "text-emerald-500" : "text-slate-400 group-hover:text-indigo-500 transition-colors")} />
-          <span className="font-bold">{isGoogleConnected ? 'Sheets Connected' : 'Connect Sheets'}</span>
+          <span className="font-bold">{isGoogleConnected ? 'Sheets Connected (Click to Reconnect)' : 'Connect Sheets'}</span>
         </button>
         {isGoogleConnected && (
           <button 
@@ -2801,6 +2800,7 @@ export default function App() {
       const response = await fetch('/api/fetch-budgets', { headers });
       if (response.status === 401) {
         setGoogleTokens(null);
+        setIsGoogleConnected(false);
         localStorage.removeItem('googleTokens');
         return;
       }
@@ -3197,6 +3197,7 @@ export default function App() {
       if (!response.ok) {
         if (response.status === 401) {
           setGoogleTokens(null);
+          setIsGoogleConnected(false);
           localStorage.removeItem('googleTokens');
           showToast('Google session expired. Please reconnect Google Sheets.', 'error');
           return;
