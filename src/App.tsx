@@ -757,7 +757,8 @@ const Header = ({
   searchQuery,
   onSearchChange,
   notifications,
-  onMarkRead
+  onMarkRead,
+  isSyncing = false
 }: { 
   title: string; 
   showSearch?: boolean; 
@@ -766,6 +767,7 @@ const Header = ({
   onSearchChange?: (val: string) => void;
   notifications: any[];
   onMarkRead: () => void;
+  isSyncing?: boolean;
 }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -773,7 +775,8 @@ const Header = ({
   const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
-    <div className="flex items-center justify-between px-6 pt-8 pb-4 min-h-[80px] relative z-20">
+    <>
+      <div className="flex items-center justify-between px-6 pt-8 pb-4 min-h-[80px] relative z-20">
       <div className="flex items-center gap-3 flex-1">
         {!isSearching ? (
           <>
@@ -907,6 +910,21 @@ const Header = ({
         </div>
       )}
     </div>
+    
+    <AnimatePresence>
+      {isSyncing && (
+        <motion.div 
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          className="bg-indigo-600 text-white px-6 py-2 flex items-center justify-center gap-2 text-xs font-bold overflow-hidden"
+        >
+          <RefreshCw size={12} className="animate-spin" />
+          <span>Syncing with Google Sheets...</span>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 };
 
@@ -1256,21 +1274,9 @@ const Dashboard = ({
           onSearchChange={onSearchChange}
           notifications={notifications}
           onMarkRead={onMarkRead}
+          isSyncing={isSyncing}
         />
         
-        <AnimatePresence>
-          {isSyncing && (
-            <motion.div 
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="bg-indigo-600 text-white px-6 py-2 flex items-center justify-center gap-2 text-xs font-bold overflow-hidden"
-            >
-              <RefreshCw size={12} className="animate-spin" />
-              <span>Syncing with Google Sheets...</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
           {/* Balance Card */}
           <div className="relative overflow-hidden premium-gradient rounded-[32px] p-8 text-white shadow-2xl shadow-indigo-500/20">
             {/* Decorative background elements */}
@@ -1849,13 +1855,15 @@ const CategorySummary = ({
   onMenuClick, 
   selectedMonth,
   notifications,
-  onMarkRead
+  onMarkRead,
+  isSyncing = false
 }: { 
   transactions: typeof INITIAL_TRANSACTIONS; 
   onMenuClick: () => void;
   selectedMonth: string;
   notifications: any[];
   onMarkRead: () => void;
+  isSyncing?: boolean;
   key?: string;
 }) => {
   const [summaryType, setSummaryType] = useState<'income' | 'expense'>('expense');
@@ -1913,6 +1921,7 @@ const CategorySummary = ({
         onMenuClick={onMenuClick} 
         notifications={notifications}
         onMarkRead={onMarkRead}
+        isSyncing={isSyncing}
       />
       
       <div className="px-6">
@@ -2037,7 +2046,8 @@ const Transactions = ({
   onSearchChange,
   onDelete,
   notifications,
-  onMarkRead
+  onMarkRead,
+  isSyncing = false
 }: { 
   transactions: typeof INITIAL_TRANSACTIONS; 
   onMenuClick: () => void;
@@ -2046,6 +2056,7 @@ const Transactions = ({
   onDelete: (id: string | number) => void;
   notifications: any[];
   onMarkRead: () => void;
+  isSyncing?: boolean;
   key?: string;
 }) => {
   const handleExportCSV = () => {
@@ -2084,6 +2095,7 @@ const Transactions = ({
         onSearchChange={onSearchChange}
         notifications={notifications}
         onMarkRead={onMarkRead}
+        isSyncing={isSyncing}
       />
       
       <div className="px-6">
@@ -2345,7 +2357,28 @@ const AddTransaction = ({ onAdd, onCancel, initialType }: { onAdd: (tx: any) => 
   );
 };
 
-const Profile = ({ profile, onUpdate, googleTokens, setGoogleTokens, showToast }: { profile: any; onUpdate: (p: any) => void; googleTokens: any; setGoogleTokens: (t: any) => void; showToast: any; key?: string }) => {
+const Profile = ({ 
+  profile, 
+  onUpdate, 
+  googleTokens, 
+  setGoogleTokens, 
+  showToast,
+  onMenuClick,
+  notifications,
+  onMarkRead,
+  isSyncing = false
+}: { 
+  profile: any; 
+  onUpdate: (p: any) => void; 
+  googleTokens: any; 
+  setGoogleTokens: (t: any) => void; 
+  showToast: any; 
+  onMenuClick: () => void;
+  notifications: any[];
+  onMarkRead: () => void;
+  isSyncing?: boolean;
+  key?: string; 
+}) => {
   const [name, setName] = useState(profile.name);
   const [avatar, setAvatar] = useState(profile.avatar);
   const [isUploading, setIsUploading] = useState(false);
@@ -2405,9 +2438,16 @@ const Profile = ({ profile, onUpdate, googleTokens, setGoogleTokens, showToast }
 
   return (
     <ScreenWrapper>
+      <Header 
+        title="Settings & Profile" 
+        onMenuClick={onMenuClick} 
+        showSearch={false}
+        notifications={notifications}
+        onMarkRead={onMarkRead}
+        isSyncing={isSyncing}
+      />
+      
       <div className="px-6 pt-8 pb-20">
-        <h2 className="text-2xl font-display font-bold text-slate-900 mb-10">My Profile</h2>
-
         <div className="flex flex-col items-center mb-10">
           <div className="relative group">
             <div className={cn(
@@ -2493,22 +2533,38 @@ const Profile = ({ profile, onUpdate, googleTokens, setGoogleTokens, showToast }
   );
 };
 
-const LoginScreen = ({ onLogin, onForgotPassword }: { onLogin: (name: string, email: string, pass: string) => void, onForgotPassword: () => void }) => {
+const LoginScreen = ({ onLogin, onForgotPassword }: { onLogin: (name: string, email: string, pass: string) => Promise<boolean>, onForgotPassword: () => void }) => {
   const [method, setMethod] = useState<'initial' | 'gmail' | 'phone'>('gmail');
   const [value, setValue] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    // Check local storage for updated password first
-    const storedPass = localStorage.getItem('financier_app_password') || 'Raju@2348';
+  const handleLogin = async () => {
+    const cleanEmail = value.trim().toLowerCase();
     
-    if (value === 'rajuhd13@gmail.com' && password === storedPass) {
-      setError('');
-      const derivedName = 'Raju';
-      onLogin(derivedName, value, password);
-    } else {
-      setError('Invalid email or password');
+    if (cleanEmail !== 'rajuhd13@gmail.com') {
+      setError('Only authorized users can access this account.');
+      return;
+    }
+
+    if (!password) {
+      setError('Please enter your password');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      const success = await onLogin('Raju', cleanEmail, password);
+      if (!success) {
+        setError('Invalid password. If you reset it, please connect Google first.');
+      }
+    } catch (e) {
+      setError('An error occurred during login');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -2604,9 +2660,10 @@ const LoginScreen = ({ onLogin, onForgotPassword }: { onLogin: (name: string, em
                 </div>
                 <button 
                   onClick={handleLogin}
-                  className="w-full py-5 premium-gradient text-white rounded-[28px] font-bold text-xl shadow-xl shadow-indigo-500/20 hover:opacity-90 transition-opacity"
+                  disabled={isLoading}
+                  className="w-full py-5 premium-gradient text-white rounded-[28px] font-bold text-xl shadow-xl shadow-indigo-500/20 hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  Sign In
+                  {isLoading ? <RefreshCw className="animate-spin mx-auto" /> : 'Sign In'}
                 </button>
               </motion.div>
             )}
@@ -2626,7 +2683,7 @@ const LoginScreen = ({ onLogin, onForgotPassword }: { onLogin: (name: string, em
   );
 };
 
-const ForgotPasswordScreen = ({ onBack, onResetSuccess }: { onBack: () => void, onResetSuccess: (newPass: string) => void }) => {
+const ForgotPasswordScreen = ({ onBack, onResetSuccess }: { onBack: () => void, onResetSuccess: (newPass: string, tokens: any) => void }) => {
   const [step, setStep] = useState<'verify' | 'reset'>('verify');
   const [email, setEmail] = useState('rajuhd13@gmail.com');
   const [newPassword, setNewPassword] = useState('');
@@ -2697,7 +2754,7 @@ const ForgotPasswordScreen = ({ onBack, onResetSuccess }: { onBack: () => void, 
       if (data.success) {
         localStorage.removeItem('temp_reset_tokens');
         localStorage.setItem('financier_app_password', newPassword);
-        onResetSuccess(newPassword);
+        onResetSuccess(newPassword, tokens);
       } else {
         setError(data.error || 'Failed to reset password');
       }
@@ -2800,6 +2857,7 @@ export default function App() {
     // If no tokens in state, we still try if we know we're connected (server will use master tokens)
     if (!tokensToUse && !isGoogleConnected) return;
 
+    setIsSyncing(true);
     try {
       const headers: any = {};
       if (tokensToUse?.access_token) {
@@ -2807,6 +2865,7 @@ export default function App() {
       }
 
       const response = await fetch('/api/fetch-budgets', { headers });
+      setIsSyncing(false);
       if (response.status === 401) {
         setGoogleTokens(null);
         setIsGoogleConnected(false);
@@ -2823,6 +2882,7 @@ export default function App() {
         }
       }
     } catch (e) {
+      setIsSyncing(false);
       console.error('Failed to fetch budgets', e);
     }
   };
@@ -2833,6 +2893,7 @@ export default function App() {
       return;
     }
     
+    setIsSyncing(true);
     showToast('Saving budgets to Google Sheets...', 'info');
     try {
       const response = await fetch('/api/save-budgets', {
@@ -2844,6 +2905,7 @@ export default function App() {
         body: JSON.stringify({ budgets: newBudgets })
       });
       
+      setIsSyncing(false);
       if (response.ok) {
         showToast('Budgets saved successfully!', 'success');
         addNotification('Budgets Updated', 'Your budget settings have been saved to Google Sheets.', 'success');
@@ -2851,6 +2913,7 @@ export default function App() {
         throw new Error('Failed to save budgets');
       }
     } catch (e: any) {
+      setIsSyncing(false);
       console.error('Failed to save budgets', e);
       showToast(`Failed to save budgets: ${e.message}`, 'error');
     }
@@ -2937,6 +3000,13 @@ export default function App() {
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [googleTokens, setGoogleTokens] = useState<any>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Persist googleTokens to localStorage
+  useEffect(() => {
+    if (googleTokens) {
+      localStorage.setItem('googleTokens', JSON.stringify(googleTokens));
+    }
+  }, [googleTokens]);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     isOpen: boolean;
     transactionId: string | number | null;
@@ -3177,6 +3247,7 @@ export default function App() {
     const tokensToUse = manualTokens || googleTokens;
     if ((!tokensToUse && !isGoogleConnected) || !profile.email) return;
     
+    setIsSyncing(true);
     try {
       const storedPass = localStorage.getItem('financier_app_password') || 'Raju@2348';
       const response = await fetch('/api/sync-user', {
@@ -3189,6 +3260,7 @@ export default function App() {
         })
       });
       const data = await response.json();
+      setIsSyncing(false);
       if (data.success && data.profile) {
         setProfile({
           name: data.profile.name || profile.name,
@@ -3197,6 +3269,7 @@ export default function App() {
         });
       }
     } catch (e) {
+      setIsSyncing(false);
       console.error('Failed to sync profile', e);
     }
   };
@@ -3211,7 +3284,6 @@ export default function App() {
     }
 
     setIsSyncing(true);
-    showToast('Fetching latest data from Sheets...', 'info');
     try {
       const response = await fetch('/api/fetch-from-sheet', {
         method: 'POST',
@@ -3412,6 +3484,7 @@ export default function App() {
                     selectedMonth={selectedMonth}
                     notifications={notifications}
                     onMarkRead={markAllNotificationsRead}
+                    isSyncing={isSyncing}
                   />
                 )}
                 {activeTab === 'history' && (
@@ -3424,6 +3497,7 @@ export default function App() {
                     onDelete={handleDeleteTransaction}
                     notifications={notifications}
                     onMarkRead={markAllNotificationsRead}
+                    isSyncing={isSyncing}
                   />
                 )}
                 {activeTab === 'profile' && (
@@ -3463,6 +3537,10 @@ export default function App() {
                     googleTokens={googleTokens} 
                     setGoogleTokens={setGoogleTokens}
                     showToast={showToast} 
+                    onMenuClick={toggleSidebar}
+                    notifications={notifications}
+                    onMarkRead={markAllNotificationsRead}
+                    isSyncing={isSyncing}
                   />
                 )}
                 {activeTab === 'add' && <AddTransaction key="add" onAdd={handleAddTransaction} onCancel={() => { setActiveTab('dashboard'); setPendingTransactionType(null); }} initialType={pendingTransactionType} />}
@@ -3486,7 +3564,12 @@ export default function App() {
       ) : showForgotPassword ? (
         <ForgotPasswordScreen 
           onBack={() => setShowForgotPassword(false)} 
-          onResetSuccess={(newPass) => {
+          onResetSuccess={(newPass, tokens) => {
+            if (tokens) {
+              setGoogleTokens(tokens);
+              setIsGoogleConnected(true);
+              localStorage.setItem('googleTokens', JSON.stringify(tokens));
+            }
             showToast('Password reset successfully! Please sign in.', 'success');
             setShowForgotPassword(false);
           }}
@@ -3495,12 +3578,12 @@ export default function App() {
         <div className="w-full max-w-md mx-auto min-h-screen flex flex-col">
           <LoginScreen 
             onForgotPassword={() => setShowForgotPassword(true)}
-            onLogin={async (name, email, pass) => {
+            onLogin={async (name, emailInput, pass) => {
+              const email = emailInput.trim().toLowerCase();
               const storedPass = localStorage.getItem('financier_app_password') || 'Raju@2348';
               
               // If we have Google tokens, prioritize server-side validation against Excel
               if (googleTokens) {
-                showToast('Verifying with Google Sheets...', 'info');
                 try {
                   const response = await fetch('/api/sync-user', {
                     method: 'POST',
@@ -3529,10 +3612,9 @@ export default function App() {
                     handleSyncBudgets(googleTokens);
                     handleSyncFromSheet(googleTokens);
                     showToast('Login successful! Data synced.', 'success');
-                    return;
+                    return true;
                   } else {
-                    showToast(data.error || 'Invalid password', 'error');
-                    return;
+                    return false;
                   }
                 } catch (e) {
                   console.error('Login sync failed', e);
@@ -3545,8 +3627,9 @@ export default function App() {
                 setIsLoggedIn(true);
                 setProfile(p => ({ ...p, name: p.name === 'John Doe' ? name : p.name, email }));
                 showToast('Logged in locally.', 'info');
+                return true;
               } else {
-                showToast('Invalid password. If you reset it, please connect Google first.', 'error');
+                return false;
               }
             }} 
           />

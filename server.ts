@@ -16,18 +16,27 @@ const TOKEN_PATH = path.join(__dirname, 'tokens.json');
 
 async function getMasterTokens() {
   try {
-    // Priority 1: Environment Variable (for Vercel)
+    // Try local file first (contains the most up-to-date tokens including access_token)
+    try {
+      const data = await fs.readFile(TOKEN_PATH, 'utf8');
+      const tokens = JSON.parse(data);
+      if (tokens && (tokens.refresh_token || tokens.access_token)) {
+        return tokens;
+      }
+    } catch (e) {
+      // File not found or invalid, fall back to environment variable
+    }
+
+    // Fallback: Environment Variable
     if (process.env.GOOGLE_REFRESH_TOKEN) {
       return {
         refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-        access_token: 'dummy', // Will be refreshed by client
+        access_token: 'dummy',
         token_type: 'Bearer',
         expiry_date: 0
       };
     }
-    // Priority 2: Local file (for AI Studio/Persistent containers)
-    const data = await fs.readFile(TOKEN_PATH, 'utf8');
-    return JSON.parse(data);
+    return null;
   } catch (e) {
     return null;
   }
@@ -175,6 +184,67 @@ function handleApiError(res: express.Response, error: any, defaultMessage: strin
   res.status(500).json({ error: defaultMessage, details: error.message });
 }
 
+// Helper to get authorized client with token refresh
+async function getAuthorizedClient(req: express.Request, tokens: any) {
+  const oauth2Client = getOAuth2Client(req);
+  
+  // Ensure we have a valid token object
+  if (!tokens) {
+    tokens = await getMasterTokens();
+  }
+
+  // Set credentials. If we only have a refresh_token, it's fine as we will refresh.
+  oauth2Client.setCredentials(tokens);
+
+  // Check if we need to refresh
+  const expiryDate = tokens.expiry_date || 0;
+  const isExpired = expiryDate < (Date.now() + 60000); // 1 min buffer
+  const isDummy = tokens.access_token === 'dummy';
+  const needsRefresh = !tokens.access_token || isExpired || isDummy;
+
+  if (needsRefresh && tokens.refresh_token) {
+    try {
+      console.log('Refreshing expired or missing access token...');
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      
+      // Merge with existing refresh_token if back-end didn't return it
+      const updatedTokens = {
+        ...tokens,
+        ...credentials
+      };
+      
+      oauth2Client.setCredentials(updatedTokens);
+      await saveMasterTokens(updatedTokens);
+      console.log('Token refreshed and saved to tokens.json');
+    } catch (error: any) {
+      console.error('Failed to refresh access token:', error.message);
+      // If refresh fails, we throw an error so the caller can return 401
+      throw new Error('AUTH_FAILED');
+    }
+  } else if (needsRefresh && !tokens.refresh_token) {
+    console.warn('Access token expired but no refresh_token available to refresh it.');
+    // Check if we have it in master tokens
+    const master = await getMasterTokens();
+    if (master?.refresh_token) {
+      console.log('Found refresh token in master storage, attempting second chance refresh...');
+      tokens.refresh_token = master.refresh_token;
+      oauth2Client.setCredentials(tokens);
+      try {
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        const updatedTokens = { ...tokens, ...credentials };
+        oauth2Client.setCredentials(updatedTokens);
+        await saveMasterTokens(updatedTokens);
+        return oauth2Client;
+      } catch (e) {
+        throw new Error('AUTH_FAILED');
+      }
+    }
+    throw new Error('AUTH_FAILED');
+  }
+
+  return oauth2Client;
+}
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -312,18 +382,17 @@ app.get('/api/auth/status', async (req, res) => {
   res.json({ connected: !!tokens });
 });
 
-app.post('/api/sync-to-sheet', async (req, res) => {
-  let { transaction, tokens } = req.body;
-  tokens = await getMasterTokens() || tokens;
-  if (!tokens) {
-    return res.status(401).json({ error: 'Not authenticated with Google' });
-  }
+  app.post('/api/sync-to-sheet', async (req, res) => {
+    let { transaction, tokens } = req.body;
+    tokens = await getMasterTokens() || tokens;
+    if (!tokens) {
+      return res.status(401).json({ error: 'Not authenticated with Google' });
+    }
 
-  try {
-    const oauth2Client = getOAuth2Client(req);
-    oauth2Client.setCredentials(tokens);
-    const sheetId = await getWorkingSheetId(oauth2Client);
-    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+    try {
+      const oauth2Client = await getAuthorizedClient(req, tokens);
+      const sheetId = await getWorkingSheetId(oauth2Client);
+      const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
@@ -376,16 +445,16 @@ app.post('/api/sync-to-sheet', async (req, res) => {
 });
 
 
-app.post('/api/sync-user', async (req, res) => {
+  app.post('/api/sync-user', async (req, res) => {
     let { email, password, tokens, name, avatar } = req.body;
-    tokens = await getMasterTokens() || tokens;
+    // Prefer tokens from body if provided (usually fresher), fallback to master tokens
+    tokens = tokens || await getMasterTokens();
     if (!tokens || !email) {
       return res.status(400).json({ error: 'Missing required information' });
     }
 
     try {
-      const oauth2Client = getOAuth2Client(req);
-      oauth2Client.setCredentials(tokens);
+      const oauth2Client = await getAuthorizedClient(req, tokens);
       const sheetId = await getWorkingSheetId(oauth2Client);
       const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
@@ -402,7 +471,11 @@ app.post('/api/sync-user', async (req, res) => {
         console.warn('Users sheet might not exist, will attempt to create on append');
       }
 
-      const userIndex = rows.findIndex(row => (row[1]?.toString() || '').toLowerCase() === email.toLowerCase());
+      const userIndex = rows.findIndex(row => {
+        const rowEmail = (row[1]?.toString() || '').trim().toLowerCase();
+        const searchEmail = email.trim().toLowerCase();
+        return rowEmail === searchEmail;
+      });
 
       const AUTHORIZED_EMAIL = 'rajuhd13@gmail.com';
 
@@ -443,11 +516,12 @@ app.post('/api/sync-user', async (req, res) => {
         });
         res.json({ success: true, profile: { name, avatar } });
       } else {
-        // Existing user - validate password
+        // Existing user - validate password (trimmed for robustness)
         const userRow = rows[userIndex];
-        const storedPassword = userRow[2];
+        const storedPassword = (userRow[2]?.toString() || '').trim();
+        const providedPassword = (password?.toString() || '').trim();
 
-        if (storedPassword !== password) {
+        if (storedPassword !== providedPassword) {
           return res.status(401).json({ error: 'Invalid password' });
         }
 
@@ -466,12 +540,11 @@ app.post('/api/sync-user', async (req, res) => {
 
   app.post('/api/update-profile', async (req, res) => {
     let { email, name, avatar, tokens } = req.body;
-    tokens = await getMasterTokens() || tokens;
+    tokens = tokens || await getMasterTokens();
     if (!tokens || !email) return res.status(400).json({ error: 'Missing required information' });
 
     try {
-      const oauth2Client = getOAuth2Client(req);
-      oauth2Client.setCredentials(tokens);
+      const oauth2Client = await getAuthorizedClient(req, tokens);
       const sheetId = await getWorkingSheetId(oauth2Client);
       const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
@@ -481,7 +554,11 @@ app.post('/api/sync-user', async (req, res) => {
       });
 
       const rows = response.data.values || [];
-      const userIndex = rows.findIndex(row => (row[1]?.toString() || '').toLowerCase() === email.toLowerCase());
+      const userIndex = rows.findIndex(row => {
+        const rowEmail = (row[1]?.toString() || '').trim().toLowerCase();
+        const searchEmail = email.trim().toLowerCase();
+        return rowEmail === searchEmail;
+      });
 
       if (userIndex !== -1) {
         // Update existing row
@@ -515,14 +592,13 @@ app.post('/api/sync-user', async (req, res) => {
 
   app.post('/api/reset-password', async (req, res) => {
     let { email, newPassword, tokens } = req.body;
-    tokens = await getMasterTokens() || tokens;
+    tokens = tokens || await getMasterTokens();
     if (!tokens || !email || !newPassword) {
       return res.status(400).json({ error: 'Missing required information' });
     }
 
     try {
-      const oauth2Client = getOAuth2Client(req);
-      oauth2Client.setCredentials(tokens);
+      const oauth2Client = await getAuthorizedClient(req, tokens);
       const sheetId = await getWorkingSheetId(oauth2Client);
       const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
@@ -532,7 +608,11 @@ app.post('/api/sync-user', async (req, res) => {
       });
 
       const rows = response.data.values || [];
-      const userIndex = rows.findIndex(row => (row[1]?.toString() || '').toLowerCase() === email.toLowerCase());
+      const userIndex = rows.findIndex(row => {
+        const rowEmail = (row[1]?.toString() || '').trim().toLowerCase();
+        const searchEmail = email.trim().toLowerCase();
+        return rowEmail === searchEmail;
+      });
 
       if (userIndex !== -1) {
         const existingRow = rows[userIndex];
@@ -560,8 +640,7 @@ app.post('/api/sync-user', async (req, res) => {
     if (!tokens) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const oauth2Client = getOAuth2Client(req);
-      oauth2Client.setCredentials(tokens);
+      const oauth2Client = await getAuthorizedClient(req, tokens);
       const sheetId = await getWorkingSheetId(oauth2Client);
       const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
@@ -643,11 +722,10 @@ app.post('/api/sync-user', async (req, res) => {
     if (!tokens) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const oauth2Client = getOAuth2Client(req);
-      oauth2Client.setCredentials(tokens);
+      const oauth2Client = await getAuthorizedClient(req, tokens);
       const sheetId = await getWorkingSheetId(oauth2Client);
       const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
-
+      
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
         range: 'Income!A:F',
@@ -674,12 +752,11 @@ app.post('/api/sync-user', async (req, res) => {
 
   app.post('/api/upload-to-drive', async (req, res) => {
     let { base64Image, fileName, tokens } = req.body;
-    tokens = await getMasterTokens() || tokens;
+    tokens = tokens || await getMasterTokens();
     if (!tokens) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
-      const oauth2Client = getOAuth2Client(req);
-      oauth2Client.setCredentials(tokens);
+      const oauth2Client = await getAuthorizedClient(req, tokens);
       const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
       const buffer = Buffer.from(base64Image.split(',')[1], 'base64');
@@ -719,32 +796,23 @@ app.post('/api/sync-user', async (req, res) => {
         tokens: oauth2Client.credentials
       });
     } catch (error: any) {
-      console.error('Error uploading to drive:', error);
-      if (error.response) {
-        console.error('Drive API Error Details:', JSON.stringify(error.response.data, null, 2));
-      }
-      res.status(500).json({ error: error?.message || 'Failed to upload to Google Drive' });
+      handleApiError(res, error, 'Failed to upload to Google Drive');
     }
   });
 
 // --- API: Budgets ---
-app.get('/api/fetch-budgets', async (req, res) => {
-  let tokens = await getMasterTokens();
-  
-  // Fallback to header if no master tokens
-  const authHeader = req.headers.authorization;
-  if (!tokens && authHeader) {
-    tokens = { access_token: authHeader.split(' ')[1] };
-  }
+  app.get('/api/fetch-budgets', async (req, res) => {
+    let tokens = await getMasterTokens();
+    const authHeader = req.headers.authorization;
+    if (!tokens && authHeader) {
+      tokens = { access_token: authHeader.split(' ')[1], token_type: 'Bearer' };
+    }
+    if (!tokens) return res.status(401).json({ error: 'Unauthorized' });
 
-  if (!tokens) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const oauth2Client = getOAuth2Client(req);
-    oauth2Client.setCredentials(tokens);
-    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
-
-    const sheetId = await getWorkingSheetId(oauth2Client);
+    try {
+      const oauth2Client = await getAuthorizedClient(req, tokens);
+      const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+      const sheetId = await getWorkingSheetId(oauth2Client);
     
     // Ensure Budgets sheet exists
     const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
@@ -791,24 +859,19 @@ app.get('/api/fetch-budgets', async (req, res) => {
   }
 });
 
-app.post('/api/save-budgets', express.json(), async (req, res) => {
-  let tokens = await getMasterTokens();
-  
-  const authHeader = req.headers.authorization;
-  if (!tokens && authHeader) {
-    tokens = { access_token: authHeader.split(' ')[1] };
-  }
-  
-  const budgets = req.body.budgets;
+  app.post('/api/save-budgets', express.json(), async (req, res) => {
+    let tokens = await getMasterTokens();
+    const authHeader = req.headers.authorization;
+    if (!tokens && authHeader) {
+      tokens = { access_token: authHeader.split(' ')[1], token_type: 'Bearer' };
+    }
+    const budgets = req.body.budgets;
+    if (!tokens) return res.status(401).json({ error: 'Unauthorized' });
 
-  if (!tokens) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const oauth2Client = getOAuth2Client(req);
-    oauth2Client.setCredentials(tokens);
-    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
-
-    const sheetId = await getWorkingSheetId(oauth2Client);
+    try {
+      const oauth2Client = await getAuthorizedClient(req, tokens);
+      const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+      const sheetId = await getWorkingSheetId(oauth2Client);
 
     // Clear existing budgets and write new ones
     await sheets.spreadsheets.values.clear({
