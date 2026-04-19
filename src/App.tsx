@@ -814,7 +814,12 @@ const Header = ({
               onClick={() => setShowNotifications(!showNotifications)}
               className="p-2.5 bg-white rounded-xl hover:bg-slate-50 transition-colors shadow-sm border border-slate-100 relative"
             >
-              <Bell size={20} className="text-slate-700" />
+              <motion.div
+                animate={unreadCount > 0 ? { rotate: [0, -15, 15, -15, 15, 0] } : {}}
+                transition={{ duration: 0.5, repeat: unreadCount > 0 ? Infinity : 0, repeatDelay: 3 }}
+              >
+                <Bell size={20} className="text-slate-700" />
+              </motion.div>
               {unreadCount > 0 && (
                 <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
               )}
@@ -880,7 +885,16 @@ const Header = ({
                                   {notification.message}
                                 </p>
                                 <span className="text-[10px] font-medium text-slate-400 mt-2 block">
-                                  {notification.time}
+                                  {(() => {
+                                    const diff = Date.now() - (notification.timestamp || Date.now());
+                                    const secs = Math.floor(diff / 1000);
+                                    if (secs < 60) return 'Just now';
+                                    const mins = Math.floor(secs / 60);
+                                    if (mins < 60) return `${mins}m ago`;
+                                    const hours = Math.floor(mins / 60);
+                                    if (hours < 24) return `${hours}h ago`;
+                                    return new Date(notification.timestamp).toLocaleDateString();
+                                  })()}
                                 </span>
                               </div>
                             </div>
@@ -2877,7 +2891,7 @@ export default function App() {
         if (Array.isArray(data)) {
           setBudgets(data);
           if (data.length > 0) {
-            showToast('Budgets synced from Google Sheets', 'success');
+            addNotification('Budgets Synced', 'Your budgets have been synced from Google Sheets.', 'success');
           }
         }
       }
@@ -2889,12 +2903,11 @@ export default function App() {
 
   const handleSaveBudgets = async (newBudgets: Budget[]) => {
     if (!isGoogleConnected) {
-      showToast('Connect Google Sheets to save budgets permanently.', 'info');
+      addNotification('Budget Sync', 'Connect Google Sheets to save budgets permanently.', 'info');
       return;
     }
     
     setIsSyncing(true);
-    showToast('Saving budgets to Google Sheets...', 'info');
     try {
       const response = await fetch('/api/save-budgets', {
         method: 'POST',
@@ -2907,7 +2920,6 @@ export default function App() {
       
       setIsSyncing(false);
       if (response.ok) {
-        showToast('Budgets saved successfully!', 'success');
         addNotification('Budgets Updated', 'Your budget settings have been saved to Google Sheets.', 'success');
       } else {
         throw new Error('Failed to save budgets');
@@ -2915,7 +2927,7 @@ export default function App() {
     } catch (e: any) {
       setIsSyncing(false);
       console.error('Failed to save budgets', e);
-      showToast(`Failed to save budgets: ${e.message}`, 'error');
+      addNotification('Budget Sync Error', `Failed to save budgets: ${e.message}`, 'alert');
     }
   };
 
@@ -3034,7 +3046,7 @@ export default function App() {
       id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       title,
       message,
-      time: 'Just now',
+      timestamp: Date.now(),
       read: false,
       type
     };
@@ -3060,6 +3072,7 @@ export default function App() {
               handleSyncFromSheet(tokens);
               handleSyncProfile(tokens);
               handleSyncBudgets(tokens);
+              addNotification('Login Successful', 'Data sync initialized from Google Sheets.', 'success');
             }, 1000);
           }
         } catch (e) {
@@ -3100,9 +3113,9 @@ export default function App() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data.error === 'MISSING_CREDENTIALS') {
-          showToast('Google Client ID/Secret missing in Settings.', 'error');
+          addNotification('Configuration Error', 'Google Client ID/Secret missing in Settings.', 'alert');
         } else {
-          showToast(`Server error: ${data.message || res.statusText}`, 'error');
+          addNotification('Server Error', `Server error: ${data.message || res.statusText}`, 'alert');
         }
         return;
       }
@@ -3112,7 +3125,7 @@ export default function App() {
       const authWindow = window.open(url, 'google_oauth', 'width=600,height=700');
       
       if (!authWindow) {
-        showToast('Popup blocked! Please allow popups for this site.', 'error');
+        addNotification('Browser Alert', 'Popup blocked! Please allow popups for this site.', 'alert');
         return;
       }
 
@@ -3154,24 +3167,20 @@ export default function App() {
         if (!response.ok) {
           if (response.status === 429) {
             setTransactions(originalTransactions);
-            showToast('Google Sheets rate limit exceeded. Please try again in a few minutes.', 'error');
-            addNotification('Sync Failed', 'Rate limit exceeded.', 'alert');
+            addNotification('Sync Failed', 'Google Sheets rate limit exceeded. Please try again soon.', 'alert');
           } else {
             const errData = await response.json();
             setTransactions(originalTransactions);
-            showToast(`Sync failed: ${errData.error || 'Unknown error'}`, 'error');
-            addNotification('Sync Failed', 'Could not sync transaction to Google Sheets.', 'alert');
+            addNotification('Sync Failed', `Could not sync: ${errData.error || 'Unknown error'}`, 'alert');
           }
         } else {
-          showToast('Successfully synced to Google Sheets!', 'success');
           addNotification('Sync Successful', `Transaction "${txWithId.category}" synced to Sheets.`, 'success');
         }
       }).catch(e => {
         setIsSyncing(false);
         console.error('Failed to sync to Google Sheets', e);
         setTransactions(originalTransactions);
-        showToast('Error connecting to server for sync.', 'error');
-        addNotification('Sync Error', 'Network error while syncing to Sheets.', 'alert');
+        addNotification('Sync Error', 'Network error while connecting to sync server.', 'alert');
       });
     } else {
       showToast('Transaction saved locally. Connect Google Sheets to sync.', 'info');
@@ -3227,17 +3236,14 @@ export default function App() {
         setIsSyncing(false);
         if (!response.ok) {
           setTransactions(originalTransactions);
-          showToast('Failed to delete from Sheets.', 'error');
-          addNotification('Delete Failed', 'Could not delete transaction from Google Sheets.', 'alert');
+          addNotification('Delete Failed', 'Could not remove transaction from Google Sheets.', 'alert');
         } else {
-          showToast('Deleted from Google Sheets!', 'success');
           addNotification('Delete Successful', 'Transaction removed from Google Sheets.', 'success');
         }
       }).catch(e => {
         setIsSyncing(false);
         console.error('Failed to delete from sheet', e);
         setTransactions(originalTransactions);
-        showToast('Error connecting to server for sync.', 'error');
         addNotification('Delete Error', 'Network error while deleting from Sheets.', 'alert');
       });
     }
@@ -3267,6 +3273,7 @@ export default function App() {
           email: profile.email,
           avatar: data.profile.avatar || null
         });
+        addNotification('Profile Synced', 'Your profile has been synced from Google Sheets.', 'success');
       }
     } catch (e) {
       setIsSyncing(false);
@@ -3297,11 +3304,11 @@ export default function App() {
           setGoogleTokens(null);
           setIsGoogleConnected(false);
           localStorage.removeItem('googleTokens');
-          showToast('Google session expired. Please reconnect Google Sheets.', 'error');
+          addNotification('Google Connection', 'Session expired. Please reconnect Google Sheets.', 'alert');
           return;
         }
         if (response.status === 429) {
-          showToast('Google Sheets rate limit exceeded. Please try again in a few minutes.', 'error');
+          addNotification('Sync Warning', 'Google Sheets rate limit exceeded. Retrying later.', 'alert');
           return;
         }
         let errText = await response.text();
@@ -3335,13 +3342,11 @@ export default function App() {
           };
         });
         setTransactions(enriched);
-        showToast('App synced with Google Sheets!', 'success');
         addNotification('Sync Successful', 'Data successfully fetched from Google Sheets.', 'success');
       }
     } catch (e: any) {
       setIsSyncing(false);
       console.error('Failed to fetch from sheet', e);
-      showToast(`Failed to sync: ${e.message}`, 'error');
       addNotification('Sync Failed', `Error: ${e.message}`, 'alert');
     }
   };
@@ -3361,11 +3366,11 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row relative overflow-x-hidden font-sans">
       {toastMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm px-4">
+        <div className="fixed top-24 right-5 z-[100] w-full max-w-sm px-4">
           <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
             className={cn(
               "px-4 py-3 rounded-2xl shadow-xl flex items-center justify-between gap-3 text-sm font-bold",
               toastMessage.type === 'success' ? "bg-emerald-600 text-white" : 
@@ -3522,16 +3527,16 @@ export default function App() {
                             })
                           });
                           if (res.ok) {
-                            showToast('Profile updated permanently!', 'success');
+                            addNotification('Profile Sync', 'Profile details updated permanently in Sheets.', 'success');
                           } else {
-                            showToast('Saved locally, but failed to sync with Sheets.', 'info');
+                            addNotification('Profile Sync', 'Profile saved locally, but cloud sync failed.', 'alert');
                           }
                         } catch (e) {
                           console.error('Failed to update profile on sheet', e);
-                          showToast('Saved locally, but failed to sync with Sheets.', 'info');
+                          addNotification('Profile Sync', 'Profile saved locally, but network error during cloud sync.', 'alert');
                         }
                       } else {
-                        showToast('Profile saved locally!', 'success');
+                        addNotification('Profile Update', 'Profile saved locally successfully!', 'success');
                       }
                     }} 
                     googleTokens={googleTokens} 
@@ -3611,7 +3616,10 @@ export default function App() {
                     // After successful login sync, fetch budgets and transactions too
                     handleSyncBudgets(googleTokens);
                     handleSyncFromSheet(googleTokens);
-                    showToast('Login successful! Data synced.', 'success');
+                    addNotification('Login Successful', 'Data successfully synced from Google Sheets.', 'success');
+                    setTimeout(() => {
+                      addNotification('Login Successful', 'Welcome back!', 'success');
+                    }, 1000);
                     return true;
                   } else {
                     return false;
@@ -3626,7 +3634,7 @@ export default function App() {
               if (pass === storedPass) {
                 setIsLoggedIn(true);
                 setProfile(p => ({ ...p, name: p.name === 'John Doe' ? name : p.name, email }));
-                showToast('Logged in locally.', 'info');
+                addNotification('Login Successful', 'Logged in successfully (Offline Mode).', 'info');
                 return true;
               } else {
                 return false;

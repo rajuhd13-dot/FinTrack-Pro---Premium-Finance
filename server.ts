@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { Readable } from 'stream';
 import fs from 'fs/promises';
+import fs_orig from 'fs';
 
 dotenv.config();
 
@@ -246,7 +247,7 @@ async function getAuthorizedClient(req: express.Request, tokens: any) {
 }
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -913,8 +914,8 @@ app.get('/api/auth/status', async (req, res) => {
   }
 });
 
-// Vite middleware - only in local development
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+// Vite middleware - only in development
+if (process.env.NODE_ENV !== 'production') {
   (async () => {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -923,12 +924,20 @@ if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     });
     app.use(vite.middlewares);
   })();
-} else if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
-  // Static serving for local production test
-  const distPath = path.join(process.cwd(), 'dist');
-  app.use(express.static(distPath));
+} else {
+  // Static serving in production
+  const distPath = path.resolve(__dirname, 'dist');
+  // Check if we are running from dist/ or root
+  const actualDistPath = fs_orig.existsSync(distPath) ? distPath : path.resolve(__dirname);
+  
+  app.use(express.static(actualDistPath));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
+    const indexPath = path.join(actualDistPath, 'index.html');
+    if (fs_orig.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(404).send('Static assets not found. Build may have failed.');
+    }
   });
 }
 
