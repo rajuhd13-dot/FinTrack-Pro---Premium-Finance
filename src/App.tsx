@@ -1110,7 +1110,7 @@ const Dashboard = ({
   profile,
   setPendingTransactionType,
   setActiveTab,
-  showToast
+  addNotification
 }: { 
   transactions: typeof INITIAL_TRANSACTIONS; 
   onMenuClick: () => void;
@@ -1128,7 +1128,7 @@ const Dashboard = ({
   profile: any;
   setPendingTransactionType: (type: 'expense' | 'income' | null) => void;
   setActiveTab: (tab: 'dashboard' | 'summary' | 'history' | 'profile' | 'add') => void;
-  showToast: (text: string, type: 'success' | 'error' | 'info') => void;
+  addNotification: (title: string, message: string, type: 'info' | 'success' | 'alert') => void;
   key?: string;
 }) => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1188,12 +1188,22 @@ const Dashboard = ({
         const jsonMatch = text.match(/\[.*\]/s);
         const insights = jsonMatch ? JSON.parse(jsonMatch[0]) : [text];
         setAiInsights(insights);
-        showToast('AI Insights updated!', 'success');
+        addNotification('AI Success', 'Your financial insights have been updated.', 'success');
       }
     } catch (e: any) {
       console.error('AI Insights failed', e);
-      setAiError(e?.message || "Failed to generate insights.");
-      showToast('AI Insight generation failed', 'error');
+      let errorMessage = "Failed to generate financial insights.";
+      
+      // Handle the "high demand" / 503 error seen in the user's screenshot
+      const rawError = e?.message || "";
+      if (rawError.includes("503") || rawError.includes("high demand") || rawError.includes("UNAVAILABLE")) {
+        errorMessage = "AI model is currently busy due to high demand. Please try again in 1-2 minutes.";
+      } else if (rawError.includes("API Key")) {
+        errorMessage = "Configuration error: AI service is not properly set up.";
+      }
+      
+      setAiError(errorMessage);
+      addNotification('AI Error', 'Model is currently unavailable. Try again shortly.', 'alert');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -1374,9 +1384,17 @@ const Dashboard = ({
           </div>
           <div className="grid gap-3">
             {aiError ? (
-              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 flex gap-3 items-start">
-                <AlertCircle size={20} className="text-red-500 shrink-0" />
-                <p className="text-sm text-red-700 font-medium leading-relaxed">{aiError}</p>
+              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 flex flex-col gap-3">
+                <div className="flex gap-3 items-start">
+                  <AlertCircle size={20} className="text-red-500 shrink-0" />
+                  <p className="text-sm text-red-700 font-medium leading-relaxed">{aiError}</p>
+                </div>
+                <button 
+                  onClick={fetchAIInsights}
+                  className="self-end text-xs font-bold bg-white text-red-600 px-4 py-2 rounded-xl border border-red-100 hover:bg-red-50 transition-colors shadow-sm"
+                >
+                  Try Again
+                </button>
               </div>
             ) : aiInsights.length > 0 ? (
               aiInsights.map((insight, idx) => (
@@ -2376,7 +2394,7 @@ const Profile = ({
   onUpdate, 
   googleTokens, 
   setGoogleTokens, 
-  showToast,
+  addNotification,
   onMenuClick,
   notifications,
   onMarkRead,
@@ -2386,7 +2404,7 @@ const Profile = ({
   onUpdate: (p: any) => void; 
   googleTokens: any; 
   setGoogleTokens: (t: any) => void; 
-  showToast: any; 
+  addNotification: (title: string, message: string, type: 'info' | 'success' | 'alert') => void; 
   onMenuClick: () => void;
   notifications: any[];
   onMarkRead: () => void;
@@ -2412,7 +2430,7 @@ const Profile = ({
         
         if (googleTokens) {
           setIsUploading(true);
-          showToast('Uploading to Google Drive...', 'info');
+          addNotification('Cloud Upload', 'Uploading profile picture to Google Drive...', 'info');
           try {
             const res = await fetch('/api/upload-to-drive', {
               method: 'POST',
@@ -2429,7 +2447,7 @@ const Profile = ({
               if (data.tokens) {
                 setGoogleTokens(data.tokens);
               }
-              showToast('Profile picture saved to Drive!', 'success');
+              addNotification('Upload Success', 'Profile picture saved to your Google Drive.', 'success');
               // Automatically update the profile with the new avatar link
               onUpdate({ avatar: data.directLink });
             } else {
@@ -2437,7 +2455,7 @@ const Profile = ({
             }
           } catch (e) {
             console.error('Drive upload failed', e);
-            showToast('Failed to upload to Drive. Saving locally.', 'error');
+            addNotification('Upload Failed', 'Failed to save to Drive. Photo saved locally.', 'alert');
             setAvatar(base64);
           } finally {
             setIsUploading(false);
@@ -3057,8 +3075,6 @@ export default function App() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
-  const [toastMessage, setToastMessage] = useState<{ text: string, type: 'success' | 'error' | 'info' } | null>(null);
-
   useEffect(() => {
     const checkAuthStatus = async () => {
       const savedTokens = localStorage.getItem('googleTokens');
@@ -3101,11 +3117,6 @@ export default function App() {
     checkAuthStatus();
   }, [isLoggedIn]);
 
-  const showToast = (text: string, type: 'success' | 'error' | 'info') => {
-    setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 5000);
-  };
-
   const handleConnectGoogle = async () => {
     try {
       const res = await fetch('/api/auth/google/url');
@@ -3135,14 +3146,14 @@ export default function App() {
           setGoogleTokens(tokens);
           setIsGoogleConnected(true);
           localStorage.setItem('googleTokens', JSON.stringify(tokens));
-          showToast('Successfully connected to Google Sheets!', 'success');
+          addNotification('Google Connection', 'Successfully connected to Google Sheets!', 'success');
           window.removeEventListener('message', handleMessage);
         }
       };
       window.addEventListener('message', handleMessage);
     } catch (e: any) {
       console.error('Failed to connect Google', e);
-      showToast(`Connection failed: ${e.message || 'Network error'}`, 'error');
+      addNotification('Connection Failed', e.message || 'Network error occurred during connection.', 'alert');
     }
   };
 
@@ -3183,7 +3194,7 @@ export default function App() {
         addNotification('Sync Error', 'Network error while connecting to sync server.', 'alert');
       });
     } else {
-      showToast('Transaction saved locally. Connect Google Sheets to sync.', 'info');
+      addNotification('Saved Locally', 'Transaction saved to your device. Connect Google Sheets for cloud sync.', 'info');
     }
   };
 
@@ -3204,7 +3215,7 @@ export default function App() {
   const confirmDeleteTransaction = async () => {
     const { transactionId, code, input } = deleteConfirmation;
     if (input !== code) {
-      showToast('Incorrect confirmation code.', 'error');
+      addNotification('Security', 'Incorrect confirmation code entered.', 'alert');
       return;
     }
 
@@ -3365,27 +3376,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row relative overflow-x-hidden font-sans">
-      {toastMessage && (
-        <div className="fixed top-24 right-5 z-[100] w-full max-w-sm px-4">
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            className={cn(
-              "px-4 py-3 rounded-2xl shadow-xl flex items-center justify-between gap-3 text-sm font-bold",
-              toastMessage.type === 'success' ? "bg-emerald-600 text-white" : 
-              toastMessage.type === 'error' ? "bg-red-600 text-white" : 
-              "bg-gray-900 text-white"
-            )}
-          >
-            <span>{toastMessage.text}</span>
-            <button onClick={() => setToastMessage(null)} className="p-1 hover:bg-white/20 rounded-full transition-colors">
-              <X size={16} />
-            </button>
-          </motion.div>
-        </div>
-      )}
-
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteConfirmation.isOpen && (
@@ -3478,7 +3468,7 @@ export default function App() {
                     profile={profile}
                     setPendingTransactionType={setPendingTransactionType}
                     setActiveTab={setActiveTab}
-                    showToast={showToast}
+                    addNotification={addNotification}
                   />
                 )}
                 {activeTab === 'summary' && (
@@ -3541,7 +3531,7 @@ export default function App() {
                     }} 
                     googleTokens={googleTokens} 
                     setGoogleTokens={setGoogleTokens}
-                    showToast={showToast} 
+                    addNotification={addNotification} 
                     onMenuClick={toggleSidebar}
                     notifications={notifications}
                     onMarkRead={markAllNotificationsRead}
@@ -3575,7 +3565,7 @@ export default function App() {
               setIsGoogleConnected(true);
               localStorage.setItem('googleTokens', JSON.stringify(tokens));
             }
-            showToast('Password reset successfully! Please sign in.', 'success');
+            addNotification('Account Security', 'Password reset successfully! Please sign in with your new credentials.', 'success');
             setShowForgotPassword(false);
           }}
         />
