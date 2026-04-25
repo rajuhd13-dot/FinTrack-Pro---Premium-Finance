@@ -32,6 +32,10 @@ Paste these headers into the first row (**Row 1**) of each sheet:
  * Version: 2.1.0
  */
 
+function doGet() {
+  return HtmlService.createHtmlOutput("<b>Financier App Script is active.</b><br>You don't need to 'Deploy as Web App' for this to work. The app connects via Sheets API directly.");
+}
+
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('Financier Systems')

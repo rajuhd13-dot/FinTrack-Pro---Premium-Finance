@@ -3004,8 +3004,11 @@ export default function App() {
       const matchesSearch = (t.purpose || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (t.category || '').toLowerCase().includes(searchQuery.toLowerCase());
       
-      // Date format: DD-MM-YYYY
-      const matchesMonth = t.date.includes(`-${monthNum}-${year}`); 
+      // Date format is flexible: DD-MM-YYYY, HH:mm or just DD-MM-YYYY
+      // We look for "-MM-YYYY" pattern
+      const dateOnly = t.date.split(',')[0].trim();
+      const matchesMonth = dateOnly.includes(`-${monthNum}-${year}`); 
+      
       return matchesSearch && matchesMonth;
     });
 
@@ -3331,6 +3334,8 @@ export default function App() {
       }
 
       const data = await response.json();
+      console.log('Fetched data from Google Sheets:', data);
+      
       if (data.transactions) {
         // Enrich transactions with icons and colors
         const seenIds = new Set();
@@ -3352,8 +3357,15 @@ export default function App() {
             color: `${catInfo.bg} ${catInfo.text}`
           };
         });
+        
+        console.log('Enriched transactions for state:', enriched);
         setTransactions(enriched);
-        addNotification('Sync Successful', 'Data successfully fetched from Google Sheets.', 'success');
+        if (enriched.length > 0) {
+          addNotification('Sync Successful', `Successfully fetched ${enriched.length} transactions from Google Sheets.`, 'success');
+        } else {
+          console.log('Sync Successful but no transactions found.');
+          addNotification('Sync Successful', 'Google Sheet is connected but contains no transactions.', 'info');
+        }
       }
     } catch (e: any) {
       setIsSyncing(false);

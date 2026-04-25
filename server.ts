@@ -733,17 +733,32 @@ app.get('/api/auth/status', async (req, res) => {
       });
 
       const rows = response.data.values;
-      if (!rows) return res.json({ transactions: [] });
+      if (!rows) {
+        console.log('No rows found in Income sheet.');
+        return res.json({ transactions: [] });
+      }
+
+      console.log(`Fetched ${rows.length} rows from Income sheet.`);
 
       // Skip header row if it exists
-      const transactions = rows.slice(1).map((row, index) => ({
-        id: `row-${index + 2}`, // Synthetic ID for UI
-        date: row[1] || '',
-        type: row[2] || '',
-        category: row[3] || '',
-        amount: parseFloat(row[4]) || 0,
-        purpose: row[5] || ''
-      }));
+      const transactions = rows.slice(1).map((row, index) => {
+        // Log individual row if it seems problematic
+        if (!row[4]) {
+          console.log(`Row ${index + 2} has empty amount:`, row);
+        }
+        
+        // Clean amount string (remove commas, currency symbols)
+        const rawAmount = row[4] ? String(row[4]).replace(/[^0-9.-]/g, '') : '0';
+        
+        return {
+          id: `row-${index + 2}`, // Synthetic ID for UI
+          date: row[1] || '',
+          type: row[2] || '',
+          category: row[3] || '',
+          amount: parseFloat(rawAmount) || 0,
+          purpose: row[5] || ''
+        };
+      });
 
       res.json({ transactions });
     } catch (error: any) {
@@ -844,11 +859,15 @@ app.get('/api/auth/status', async (req, res) => {
     });
 
     const rows = response.data.values || [];
-    const budgets = rows.map(row => ({
-      date: row[1] || '',
-      category: row[2],
-      amount: parseFloat(row[3]) || 0
-    }));
+    const budgets = rows.map(row => {
+      // Clean amount string (remove commas, currency symbols)
+      const rawAmount = row[3] ? String(row[3]).replace(/[^0-9.-]/g, '') : '0';
+      return {
+        date: row[1] || '',
+        category: row[2],
+        amount: parseFloat(rawAmount) || 0
+      };
+    });
 
     res.json(budgets);
   } catch (error: any) {
