@@ -5,7 +5,6 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { Readable } from 'stream';
 import fs from 'fs/promises';
-import fs_orig from 'fs';
 
 dotenv.config();
 
@@ -247,7 +246,7 @@ async function getAuthorizedClient(req: express.Request, tokens: any) {
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -733,32 +732,17 @@ app.get('/api/auth/status', async (req, res) => {
       });
 
       const rows = response.data.values;
-      if (!rows) {
-        console.log('No rows found in Income sheet.');
-        return res.json({ transactions: [] });
-      }
-
-      console.log(`Fetched ${rows.length} rows from Income sheet.`);
+      if (!rows) return res.json({ transactions: [] });
 
       // Skip header row if it exists
-      const transactions = rows.slice(1).map((row, index) => {
-        // Log individual row if it seems problematic
-        if (!row[4]) {
-          console.log(`Row ${index + 2} has empty amount:`, row);
-        }
-        
-        // Clean amount string (remove commas, currency symbols)
-        const rawAmount = row[4] ? String(row[4]).replace(/[^0-9.-]/g, '') : '0';
-        
-        return {
-          id: `row-${index + 2}`, // Synthetic ID for UI
-          date: row[1] || '',
-          type: row[2] || '',
-          category: row[3] || '',
-          amount: parseFloat(rawAmount) || 0,
-          purpose: row[5] || ''
-        };
-      });
+      const transactions = rows.slice(1).map((row, index) => ({
+        id: `row-${index + 2}`, // Synthetic ID for UI
+        date: row[1] || '',
+        type: row[2] || '',
+        category: row[3] || '',
+        amount: parseFloat(row[4]) || 0,
+        purpose: row[5] || ''
+      }));
 
       res.json({ transactions });
     } catch (error: any) {
@@ -859,15 +843,11 @@ app.get('/api/auth/status', async (req, res) => {
     });
 
     const rows = response.data.values || [];
-    const budgets = rows.map(row => {
-      // Clean amount string (remove commas, currency symbols)
-      const rawAmount = row[3] ? String(row[3]).replace(/[^0-9.-]/g, '') : '0';
-      return {
-        date: row[1] || '',
-        category: row[2],
-        amount: parseFloat(rawAmount) || 0
-      };
-    });
+    const budgets = rows.map(row => ({
+      date: row[1] || '',
+      category: row[2],
+      amount: parseFloat(row[3]) || 0
+    }));
 
     res.json(budgets);
   } catch (error: any) {
@@ -933,8 +913,8 @@ app.get('/api/auth/status', async (req, res) => {
   }
 });
 
-// Vite middleware - only in development
-if (process.env.NODE_ENV !== 'production') {
+// Vite middleware - only in local development
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   (async () => {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -943,20 +923,12 @@ if (process.env.NODE_ENV !== 'production') {
     });
     app.use(vite.middlewares);
   })();
-} else {
-  // Static serving in production
-  const distPath = path.resolve(__dirname, 'dist');
-  // Check if we are running from dist/ or root
-  const actualDistPath = fs_orig.existsSync(distPath) ? distPath : path.resolve(__dirname);
-  
-  app.use(express.static(actualDistPath));
+} else if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
+  // Static serving for local production test
+  const distPath = path.join(process.cwd(), 'dist');
+  app.use(express.static(distPath));
   app.get('*', (req, res) => {
-    const indexPath = path.join(actualDistPath, 'index.html');
-    if (fs_orig.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(404).send('Static assets not found. Build may have failed.');
-    }
+    res.sendFile(path.join(distPath, 'index.html'));
   });
 }
 

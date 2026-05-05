@@ -885,16 +885,7 @@ const Header = ({
                                   {notification.message}
                                 </p>
                                 <span className="text-[10px] font-medium text-slate-400 mt-2 block">
-                                  {(() => {
-                                    const diff = Date.now() - (notification.timestamp || Date.now());
-                                    const secs = Math.floor(diff / 1000);
-                                    if (secs < 60) return 'Just now';
-                                    const mins = Math.floor(secs / 60);
-                                    if (mins < 60) return `${mins}m ago`;
-                                    const hours = Math.floor(mins / 60);
-                                    if (hours < 24) return `${hours}h ago`;
-                                    return new Date(notification.timestamp).toLocaleDateString();
-                                  })()}
+                                  {new Date(notification.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </div>
                             </div>
@@ -1110,7 +1101,7 @@ const Dashboard = ({
   profile,
   setPendingTransactionType,
   setActiveTab,
-  addNotification
+  showToast
 }: { 
   transactions: typeof INITIAL_TRANSACTIONS; 
   onMenuClick: () => void;
@@ -1128,7 +1119,7 @@ const Dashboard = ({
   profile: any;
   setPendingTransactionType: (type: 'expense' | 'income' | null) => void;
   setActiveTab: (tab: 'dashboard' | 'summary' | 'history' | 'profile' | 'add') => void;
-  addNotification: (title: string, message: string, type: 'info' | 'success' | 'alert') => void;
+  showToast: (text: string, type: 'success' | 'error' | 'info') => void;
   key?: string;
 }) => {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1188,22 +1179,12 @@ const Dashboard = ({
         const jsonMatch = text.match(/\[.*\]/s);
         const insights = jsonMatch ? JSON.parse(jsonMatch[0]) : [text];
         setAiInsights(insights);
-        addNotification('AI Success', 'Your financial insights have been updated.', 'success');
+        showToast('AI Insights updated!', 'success');
       }
     } catch (e: any) {
       console.error('AI Insights failed', e);
-      let errorMessage = "Failed to generate financial insights.";
-      
-      // Handle the "high demand" / 503 error seen in the user's screenshot
-      const rawError = e?.message || "";
-      if (rawError.includes("503") || rawError.includes("high demand") || rawError.includes("UNAVAILABLE")) {
-        errorMessage = "AI model is currently busy due to high demand. Please try again in 1-2 minutes.";
-      } else if (rawError.includes("API Key")) {
-        errorMessage = "Configuration error: AI service is not properly set up.";
-      }
-      
-      setAiError(errorMessage);
-      addNotification('AI Error', 'Model is currently unavailable. Try again shortly.', 'alert');
+      setAiError(e?.message || "Failed to generate insights.");
+      showToast('AI Insight generation failed', 'error');
     } finally {
       setIsGeneratingAI(false);
     }
@@ -1384,17 +1365,9 @@ const Dashboard = ({
           </div>
           <div className="grid gap-3">
             {aiError ? (
-              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 flex flex-col gap-3">
-                <div className="flex gap-3 items-start">
-                  <AlertCircle size={20} className="text-red-500 shrink-0" />
-                  <p className="text-sm text-red-700 font-medium leading-relaxed">{aiError}</p>
-                </div>
-                <button 
-                  onClick={fetchAIInsights}
-                  className="self-end text-xs font-bold bg-white text-red-600 px-4 py-2 rounded-xl border border-red-100 hover:bg-red-50 transition-colors shadow-sm"
-                >
-                  Try Again
-                </button>
+              <div className="p-4 bg-red-50 rounded-2xl border border-red-100 flex gap-3 items-start">
+                <AlertCircle size={20} className="text-red-500 shrink-0" />
+                <p className="text-sm text-red-700 font-medium leading-relaxed">{aiError}</p>
               </div>
             ) : aiInsights.length > 0 ? (
               aiInsights.map((insight, idx) => (
@@ -2394,25 +2367,34 @@ const Profile = ({
   onUpdate, 
   googleTokens, 
   setGoogleTokens, 
-  addNotification,
+  showToast,
   onMenuClick,
   notifications,
   onMarkRead,
-  isSyncing = false
+  isSyncing = false,
+  googleScriptUrl,
+  setGoogleScriptUrl,
+  isGoogleConnected,
+  clearOldConnection
 }: { 
   profile: any; 
   onUpdate: (p: any) => void; 
   googleTokens: any; 
   setGoogleTokens: (t: any) => void; 
-  addNotification: (title: string, message: string, type: 'info' | 'success' | 'alert') => void; 
+  showToast: any; 
   onMenuClick: () => void;
   notifications: any[];
   onMarkRead: () => void;
   isSyncing?: boolean;
   key?: string; 
+  googleScriptUrl: string;
+  setGoogleScriptUrl: (url: string) => void;
+  isGoogleConnected: boolean;
+  clearOldConnection: () => void;
 }) => {
   const [name, setName] = useState(profile.name);
   const [avatar, setAvatar] = useState(profile.avatar);
+  const [tempScriptUrl, setTempScriptUrl] = useState(googleScriptUrl);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -2430,7 +2412,7 @@ const Profile = ({
         
         if (googleTokens) {
           setIsUploading(true);
-          addNotification('Cloud Upload', 'Uploading profile picture to Google Drive...', 'info');
+          showToast('Uploading to Google Drive...', 'info');
           try {
             const res = await fetch('/api/upload-to-drive', {
               method: 'POST',
@@ -2447,7 +2429,7 @@ const Profile = ({
               if (data.tokens) {
                 setGoogleTokens(data.tokens);
               }
-              addNotification('Upload Success', 'Profile picture saved to your Google Drive.', 'success');
+              showToast('Profile picture saved to Drive!', 'success');
               // Automatically update the profile with the new avatar link
               onUpdate({ avatar: data.directLink });
             } else {
@@ -2455,7 +2437,7 @@ const Profile = ({
             }
           } catch (e) {
             console.error('Drive upload failed', e);
-            addNotification('Upload Failed', 'Failed to save to Drive. Photo saved locally.', 'alert');
+            showToast('Failed to upload to Drive. Saving locally.', 'error');
             setAvatar(base64);
           } finally {
             setIsUploading(false);
@@ -2548,6 +2530,42 @@ const Profile = ({
                 <span className="text-slate-600 font-medium text-sm">Language</span>
                 <span className="font-bold text-slate-900 bg-white px-3 py-1 rounded-lg text-sm shadow-sm">English</span>
               </div>
+            </div>
+          </div>
+
+          <div className="p-6 bg-emerald-50 rounded-[32px] border border-emerald-100/50">
+            <h4 className="text-sm font-bold text-emerald-600 mb-4 uppercase tracking-wider flex items-center gap-2">
+              <FileSpreadsheet size={16} />
+              Google Apps Script Backend
+            </h4>
+            <div className="space-y-4">
+              <p className="text-xs text-emerald-700 leading-relaxed font-medium">
+                Fix "Session Expired" by using a custom Google Script URL. Paste your deployed Web App URL below.
+              </p>
+              <input
+                type="text"
+                value={tempScriptUrl}
+                onChange={(e) => setTempScriptUrl(e.target.value)}
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="w-full p-4 bg-white rounded-2xl border border-emerald-100 outline-none text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-sm"
+              />
+              <button
+                onClick={() => {
+                  setGoogleScriptUrl(tempScriptUrl);
+                  showToast('Google Script URL saved!', 'success');
+                }}
+                className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-emerald-700 transition-colors"
+              >
+                Connect Google Script
+              </button>
+              {isGoogleConnected && (
+                <button
+                  onClick={clearOldConnection}
+                  className="w-full py-2 text-rose-500 text-xs font-bold hover:bg-rose-50 rounded-lg transition-colors border border-dashed border-rose-200 mt-2"
+                >
+                  Clear Expired OAuth Session
+                </button>
+              )}
             </div>
           </div>
 
@@ -2715,7 +2733,13 @@ const LoginScreen = ({ onLogin, onForgotPassword }: { onLogin: (name: string, em
   );
 };
 
-const ForgotPasswordScreen = ({ onBack, onResetSuccess }: { onBack: () => void, onResetSuccess: (newPass: string, tokens: any) => void }) => {
+const ForgotPasswordScreen = ({ onBack, onResetSuccess, googleScriptUrl, callGasApi, showToast }: { 
+  onBack: () => void, 
+  onResetSuccess: (newPass: string, tokens: any) => void,
+  googleScriptUrl: string,
+  callGasApi: (action: string, data?: any) => Promise<any>,
+  showToast: (msg: string, type: string) => void
+}) => {
   const [step, setStep] = useState<'verify' | 'reset'>('verify');
   const [email, setEmail] = useState('rajuhd13@gmail.com');
   const [newPassword, setNewPassword] = useState('');
@@ -2771,6 +2795,16 @@ const ForgotPasswordScreen = ({ onBack, onResetSuccess }: { onBack: () => void, 
     setLoading(true);
     setError('');
     try {
+      if (googleScriptUrl) {
+        const data = await callGasApi('resetPassword', { email, newPassword });
+        setLoading(false);
+        if (data && data.success) {
+          showToast('Password reset successfully via Script!', 'success');
+          setStep('login');
+          return;
+        }
+      }
+
       const tokens = JSON.parse(localStorage.getItem('temp_reset_tokens') || '{}');
       const response = await fetch('/api/reset-password', {
         method: 'POST',
@@ -2883,14 +2917,25 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [budgets, setBudgets] = useState<Budget[]>([]);
 
-  const handleSyncBudgets = async (manualTokens?: any) => {
+  const handleSyncBudgets = async (manualTokens?: any, silent = false) => {
     const tokensToUse = manualTokens || googleTokens;
-    console.log('Syncing budgets...', { hasTokens: !!tokensToUse, isConnected: isGoogleConnected });
-    // If no tokens in state, we still try if we know we're connected (server will use master tokens)
-    if (!tokensToUse && !isGoogleConnected) return;
-
-    setIsSyncing(true);
+    if (!silent) setIsSyncing(true);
     try {
+      if (googleScriptUrl) {
+        const data = await callGasApi('fetchBudgets');
+        if (!silent) setIsSyncing(false);
+        if (data && data.budgets) {
+          setBudgets(data.budgets);
+          if (!silent) addNotification('Budgets Synced', 'Your budgets have been synced via Google Script.', 'success');
+        } else if (data && data.error && !silent) {
+          showToast(`Script Error: ${data.error}`, 'error');
+        }
+        return;
+      }
+
+      // Fallback or if no GAS URL
+      if (!isGoogleConnected) return; // Don't even try if not connected to standard sheets
+      
       const headers: any = {};
       if (tokensToUse?.access_token) {
         headers['Authorization'] = `Bearer ${tokensToUse.access_token}`;
@@ -2916,17 +2961,29 @@ export default function App() {
     } catch (e) {
       setIsSyncing(false);
       console.error('Failed to fetch budgets', e);
+      showToast(`Failed to fetch budgets: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
     }
   };
 
   const handleSaveBudgets = async (newBudgets: Budget[]) => {
-    if (!isGoogleConnected) {
-      addNotification('Budget Sync', 'Connect Google Sheets to save budgets permanently.', 'info');
+    if (!isGoogleConnected && !googleScriptUrl) {
+      showToast('Connect Google Sheets or set Google Script URL to save budgets.', 'info');
       return;
     }
     
     setIsSyncing(true);
+    showToast('Saving budgets...', 'info');
     try {
+      if (googleScriptUrl) {
+        const data = await callGasApi('saveBudgets', { budgets: newBudgets });
+        setIsSyncing(false);
+        if (data && data.success) {
+          showToast('Budgets saved successfully!', 'success');
+          addNotification('Budgets Updated', 'Your budget settings have been saved.', 'success');
+          return;
+        }
+      }
+
       const response = await fetch('/api/save-budgets', {
         method: 'POST',
         headers: {
@@ -2938,6 +2995,7 @@ export default function App() {
       
       setIsSyncing(false);
       if (response.ok) {
+        showToast('Budgets saved successfully!', 'success');
         addNotification('Budgets Updated', 'Your budget settings have been saved to Google Sheets.', 'success');
       } else {
         throw new Error('Failed to save budgets');
@@ -2945,7 +3003,7 @@ export default function App() {
     } catch (e: any) {
       setIsSyncing(false);
       console.error('Failed to save budgets', e);
-      addNotification('Budget Sync Error', `Failed to save budgets: ${e.message}`, 'alert');
+      showToast(`Failed to save budgets: ${e.message}`, 'error');
     }
   };
 
@@ -3004,11 +3062,8 @@ export default function App() {
       const matchesSearch = (t.purpose || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (t.category || '').toLowerCase().includes(searchQuery.toLowerCase());
       
-      // Date format is flexible: DD-MM-YYYY, HH:mm or just DD-MM-YYYY
-      // We look for "-MM-YYYY" pattern
-      const dateOnly = t.date.split(',')[0].trim();
-      const matchesMonth = dateOnly.includes(`-${monthNum}-${year}`); 
-      
+      // Date format: DD-MM-YYYY
+      const matchesMonth = t.date.includes(`-${monthNum}-${year}`); 
       return matchesSearch && matchesMonth;
     });
 
@@ -3033,6 +3088,56 @@ export default function App() {
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [googleTokens, setGoogleTokens] = useState<any>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [googleScriptUrl, setGoogleScriptUrl] = useState(() => {
+    return localStorage.getItem('google_script_url') || '';
+  });
+
+  const clearOldConnection = () => {
+    localStorage.removeItem('googleTokens');
+    setGoogleTokens(null);
+    setIsGoogleConnected(false);
+    showToast('Old Google connection cleared.', 'success');
+  };
+
+  useEffect(() => {
+    localStorage.setItem('google_script_url', googleScriptUrl);
+  }, [googleScriptUrl]);
+
+  const callGasApi = async (action: string, data: any = {}) => {
+    if (!googleScriptUrl) return null;
+    try {
+      const isFetchAction = action.startsWith('fetch');
+      const url = isFetchAction 
+        ? `${googleScriptUrl}?action=${action}`
+        : googleScriptUrl;
+
+      const options: RequestInit = {
+        method: isFetchAction ? 'GET' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      };
+
+      if (!isFetchAction) {
+        options.body = JSON.stringify({ action, ...data });
+      }
+
+      const res = await fetch(url, options);
+      if (res.ok) {
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error('Failed to parse GAS response:', text);
+          return null;
+        }
+      }
+      return null;
+    } catch (e) {
+      console.error('GAS API Error:', e);
+      return null;
+    }
+  };
 
   // Persist googleTokens to localStorage
   useEffect(() => {
@@ -3078,6 +3183,8 @@ export default function App() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
+  const [toastMessage, setToastMessage] = useState<{ text: string, type: 'success' | 'error' | 'info' } | null>(null);
+
   useEffect(() => {
     const checkAuthStatus = async () => {
       const savedTokens = localStorage.getItem('googleTokens');
@@ -3086,14 +3193,6 @@ export default function App() {
           const tokens = JSON.parse(savedTokens);
           setGoogleTokens(tokens);
           setIsGoogleConnected(true);
-          if (isLoggedIn) {
-            setTimeout(() => {
-              handleSyncFromSheet(tokens);
-              handleSyncProfile(tokens);
-              handleSyncBudgets(tokens);
-              addNotification('Login Successful', 'Data sync initialized from Google Sheets.', 'success');
-            }, 1000);
-          }
         } catch (e) {
           console.error('Failed to parse saved tokens', e);
           localStorage.removeItem('googleTokens');
@@ -3102,16 +3201,7 @@ export default function App() {
         try {
           const res = await fetch('/api/auth/status');
           const data = await res.json();
-          if (data.connected) {
-            setIsGoogleConnected(true);
-            if (isLoggedIn) {
-              setTimeout(() => {
-                handleSyncFromSheet();
-                handleSyncProfile();
-                handleSyncBudgets();
-              }, 1000);
-            }
-          }
+          if (data.connected) setIsGoogleConnected(true);
         } catch (e) {
           console.error('Failed to check auth status', e);
         }
@@ -3119,6 +3209,34 @@ export default function App() {
     };
     checkAuthStatus();
   }, [isLoggedIn]);
+
+  const handleFullSync = async () => {
+    if (!isLoggedIn || (!isGoogleConnected && !googleScriptUrl)) return;
+    
+    setIsSyncing(true);
+    try {
+      await Promise.all([
+        handleSyncFromSheet(undefined, true),
+        handleSyncProfile(undefined, true),
+        handleSyncBudgets(undefined, true)
+      ]);
+      addNotification('Sync Complete', 'Everything is up to date.', 'success');
+    } catch (e) {
+      console.error('Full synchronization failed', e);
+      showToast('Sync partially failed. Please try again.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    handleFullSync();
+  }, [isLoggedIn, isGoogleConnected, googleScriptUrl]);
+
+  const showToast = (text: string, type: 'success' | 'error' | 'info') => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 5000);
+  };
 
   const handleConnectGoogle = async () => {
     try {
@@ -3149,14 +3267,14 @@ export default function App() {
           setGoogleTokens(tokens);
           setIsGoogleConnected(true);
           localStorage.setItem('googleTokens', JSON.stringify(tokens));
-          addNotification('Google Connection', 'Successfully connected to Google Sheets!', 'success');
+          showToast('Successfully connected to Google Sheets!', 'success');
           window.removeEventListener('message', handleMessage);
         }
       };
       window.addEventListener('message', handleMessage);
     } catch (e: any) {
       console.error('Failed to connect Google', e);
-      addNotification('Connection Failed', e.message || 'Network error occurred during connection.', 'alert');
+      showToast(`Connection failed: ${e.message || 'Network error'}`, 'error');
     }
   };
 
@@ -3165,6 +3283,23 @@ export default function App() {
     const originalTransactions = [...transactions];
     setTransactions([txWithId, ...transactions]);
     setActiveTab('dashboard');
+
+    if (googleScriptUrl) {
+      setIsSyncing(true);
+      if (googleScriptUrl) {
+        callGasApi('addTransaction', txWithId).then(data => {
+          setIsSyncing(false);
+          if (data && data.success) {
+            showToast(`${newTx.amount > 0 ? 'Income' : 'Expense'} synced via Google Script!`, 'success');
+            addNotification('Sync Successful', `Transaction "${txWithId.category}" added to Sheet via Script.`, 'success');
+          } else {
+            setTransactions(originalTransactions);
+            showToast('Sync via Google Script failed.', 'error');
+          }
+        });
+        return;
+      }
+    }
 
     if (googleTokens) {
       setIsSyncing(true);
@@ -3181,11 +3316,13 @@ export default function App() {
         if (!response.ok) {
           if (response.status === 429) {
             setTransactions(originalTransactions);
-            addNotification('Sync Failed', 'Google Sheets rate limit exceeded. Please try again soon.', 'alert');
+            showToast('Google Sheets rate limit exceeded. Please try again in a few minutes.', 'error');
+            addNotification('Sync Failed', 'Rate limit exceeded.', 'alert');
           } else {
             const errData = await response.json();
             setTransactions(originalTransactions);
-            addNotification('Sync Failed', `Could not sync: ${errData.error || 'Unknown error'}`, 'alert');
+            showToast(`Sync failed: ${errData.error || 'Unknown error'}`, 'error');
+            addNotification('Sync Failed', 'Could not sync transaction to Google Sheets.', 'alert');
           }
         } else {
           addNotification('Sync Successful', `Transaction "${txWithId.category}" synced to Sheets.`, 'success');
@@ -3194,10 +3331,11 @@ export default function App() {
         setIsSyncing(false);
         console.error('Failed to sync to Google Sheets', e);
         setTransactions(originalTransactions);
-        addNotification('Sync Error', 'Network error while connecting to sync server.', 'alert');
+        showToast('Error connecting to server for sync.', 'error');
+        addNotification('Sync Error', 'Network error while syncing to Sheets.', 'alert');
       });
     } else {
-      addNotification('Saved Locally', 'Transaction saved to your device. Connect Google Sheets for cloud sync.', 'info');
+      showToast('Transaction saved locally. Connect Google Sheets to sync.', 'info');
     }
   };
 
@@ -3218,7 +3356,7 @@ export default function App() {
   const confirmDeleteTransaction = async () => {
     const { transactionId, code, input } = deleteConfirmation;
     if (input !== code) {
-      addNotification('Security', 'Incorrect confirmation code entered.', 'alert');
+      showToast('Incorrect confirmation code.', 'error');
       return;
     }
 
@@ -3232,7 +3370,28 @@ export default function App() {
     setTransactions(transactions.filter(t => t.id !== transactionId));
     setDeleteConfirmation(prev => ({ ...prev, isOpen: false }));
     
-    if (googleTokens) {
+    if (googleScriptUrl) {
+      setIsSyncing(true);
+      callGasApi('deleteTransaction', { 
+        transaction: {
+          date: txToDelete.date,
+          category: txToDelete.category,
+          amount: txToDelete.amount
+        }
+      }).then(data => {
+        setIsSyncing(false);
+        if (data && data.success) {
+          showToast('Deleted from Google Script!', 'success');
+          addNotification('Delete Successful', 'Transaction removed via Script.', 'success');
+        } else {
+          setTransactions(originalTransactions);
+          showToast('Failed to delete via Google Script.', 'error');
+        }
+      });
+      return;
+    }
+    
+    if (googleTokens && isGoogleConnected) {
       setIsSyncing(true);
       // Optimistic update - don't wait for sync
       fetch('/api/delete-from-sheet', {
@@ -3250,62 +3409,96 @@ export default function App() {
         setIsSyncing(false);
         if (!response.ok) {
           setTransactions(originalTransactions);
-          addNotification('Delete Failed', 'Could not remove transaction from Google Sheets.', 'alert');
+          showToast('Failed to delete from Sheets.', 'error');
+          addNotification('Delete Failed', 'Could not delete transaction from Google Sheets.', 'alert');
         } else {
+          showToast('Deleted from Google Sheets!', 'success');
           addNotification('Delete Successful', 'Transaction removed from Google Sheets.', 'success');
         }
       }).catch(e => {
         setIsSyncing(false);
         console.error('Failed to delete from sheet', e);
         setTransactions(originalTransactions);
+        showToast('Error connecting to server for sync.', 'error');
         addNotification('Delete Error', 'Network error while deleting from Sheets.', 'alert');
       });
     }
   };
 
-  const handleSyncProfile = async (manualTokens?: any) => {
+  const handleSyncProfile = async (manualTokens?: any, silent = false) => {
     const tokensToUse = manualTokens || googleTokens;
-    if ((!tokensToUse && !isGoogleConnected) || !profile.email) return;
+    if ((!tokensToUse && !isGoogleConnected && !googleScriptUrl) || !profile.email) return;
     
-    setIsSyncing(true);
+    if (!silent) setIsSyncing(true);
     try {
       const storedPass = localStorage.getItem('financier_app_password') || 'Raju@2348';
-      const response = await fetch('/api/sync-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: profile.email, 
-          password: storedPass, // Using the stored password
-          tokens: tokensToUse 
-        })
-      });
-      const data = await response.json();
-      setIsSyncing(false);
-      if (data.success && data.profile) {
+      
+      let data;
+      if (googleScriptUrl) {
+        const usersData = await callGasApi('fetchUsers');
+        if (usersData && usersData.users) {
+          const user = usersData.users.find((u: any) => u.userName === profile.email && u.password === storedPass);
+          data = user ? { success: true, profile: { name: user.profileName, avatar: user.imageLink } } : { success: false, error: 'User not found' };
+        } else {
+          data = { success: false, error: 'Could not fetch users' };
+        }
+      } else {
+        const response = await fetch('/api/sync-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            email: profile.email, 
+            password: storedPass,
+            tokens: tokensToUse 
+          })
+        });
+        data = await response.json();
+      }
+
+      if (!silent) setIsSyncing(false);
+      if (data && data.success && data.profile) {
         setProfile({
           name: data.profile.name || profile.name,
           email: profile.email,
           avatar: data.profile.avatar || null
         });
-        addNotification('Profile Synced', 'Your profile has been synced from Google Sheets.', 'success');
+        if (!silent) addNotification('Profile Synced', `Your profile has been synced via ${googleScriptUrl ? 'Script' : 'Sheets'}.`, 'success');
       }
     } catch (e) {
-      setIsSyncing(false);
+      if (!silent) setIsSyncing(false);
       console.error('Failed to sync profile', e);
     }
   };
 
-  const handleSyncFromSheet = async (manualTokens?: any) => {
+  const handleSyncFromSheet = async (manualTokens?: any, silent = false) => {
     const tokensToUse = manualTokens || googleTokens;
-    console.log('Syncing transactions from sheet...', { hasTokens: !!tokensToUse, isConnected: isGoogleConnected });
     
-    if (!tokensToUse && !isGoogleConnected) {
-      console.log('Skipping sync: No Google tokens available and not connected');
-      return;
-    }
+    if (!tokensToUse && !isGoogleConnected && !googleScriptUrl) return;
 
-    setIsSyncing(true);
+    if (!silent) setIsSyncing(true);
     try {
+      if (googleScriptUrl) {
+        const data = await callGasApi('fetchTransactions');
+        if (!silent) setIsSyncing(false);
+        if (data && data.transactions) {
+          const seenIds = new Set();
+          const enriched = data.transactions.map((tx: any) => {
+            const isIncome = tx.amount > 0;
+            const cats = isIncome ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+            const catInfo = cats.find(c => c.name === tx.category) || cats[cats.length - 1];
+            let id = tx.id || Math.random().toString(36).substr(2, 9);
+            if (seenIds.has(id)) { id = `${id}-${Math.random().toString(36).substr(2, 4)}`; }
+            seenIds.add(id);
+            return { ...tx, id, icon: catInfo.icon, color: `${catInfo.bg} ${catInfo.text}` };
+          });
+          setTransactions(enriched);
+          if (!silent) addNotification('Sync Successful', 'Transactions fetched via Google Script.', 'success');
+        } else if (data && data.error && !silent) {
+          showToast(`Script Error: ${data.error}`, 'error');
+        }
+        return;
+      }
+
       const response = await fetch('/api/fetch-from-sheet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3318,11 +3511,13 @@ export default function App() {
           setGoogleTokens(null);
           setIsGoogleConnected(false);
           localStorage.removeItem('googleTokens');
-          addNotification('Google Connection', 'Session expired. Please reconnect Google Sheets.', 'alert');
+          if (!googleScriptUrl) {
+            showToast('Google session expired. Please reconnect Google Sheets.', 'error');
+          }
           return;
         }
         if (response.status === 429) {
-          addNotification('Sync Warning', 'Google Sheets rate limit exceeded. Retrying later.', 'alert');
+          showToast('Google Sheets rate limit exceeded. Please try again in a few minutes.', 'error');
           return;
         }
         let errText = await response.text();
@@ -3330,12 +3525,11 @@ export default function App() {
           const errJson = JSON.parse(errText);
           errText = errJson.error || errText;
         } catch (e) {}
+        showToast(`Server error: ${response.status} ${errText}`, 'error');
         throw new Error(`Server error: ${response.status} ${errText}`);
       }
 
       const data = await response.json();
-      console.log('Fetched data from Google Sheets:', data);
-      
       if (data.transactions) {
         // Enrich transactions with icons and colors
         const seenIds = new Set();
@@ -3357,19 +3551,29 @@ export default function App() {
             color: `${catInfo.bg} ${catInfo.text}`
           };
         });
-        
-        console.log('Enriched transactions for state:', enriched);
         setTransactions(enriched);
-        if (enriched.length > 0) {
-          addNotification('Sync Successful', `Successfully fetched ${enriched.length} transactions from Google Sheets.`, 'success');
-        } else {
-          console.log('Sync Successful but no transactions found.');
-          addNotification('Sync Successful', 'Google Sheet is connected but contains no transactions.', 'info');
-        }
+        addNotification('Sync Successful', 'Data successfully fetched from Google Sheets.', 'success');
       }
     } catch (e: any) {
       setIsSyncing(false);
       console.error('Failed to fetch from sheet', e);
+      
+      const isInvalidGrant = e.message?.includes('invalid_grant');
+      if (isInvalidGrant && !googleScriptUrl) {
+        setGoogleTokens(null);
+        setIsGoogleConnected(false);
+        localStorage.removeItem('googleTokens');
+        // Only show if not using GAS
+        showToast('Google session expired (invalid_grant). Please reconnect Google Sheets.', 'error');
+      } else if (isInvalidGrant && googleScriptUrl) {
+        // Silently clear tokens but don't annoy user if GAS is fallback
+        setGoogleTokens(null);
+        setIsGoogleConnected(false);
+        localStorage.removeItem('googleTokens');
+      } else {
+        showToast(`Failed to sync: ${e.message}`, 'error');
+      }
+      
       addNotification('Sync Failed', `Error: ${e.message}`, 'alert');
     }
   };
@@ -3388,6 +3592,27 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row relative overflow-x-hidden font-sans">
+      {toastMessage && (
+        <div className="fixed top-24 right-5 z-[100] w-full max-w-sm px-4">
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className={cn(
+              "px-4 py-3 rounded-2xl shadow-xl flex items-center justify-between gap-3 text-sm font-bold",
+              toastMessage.type === 'success' ? "bg-emerald-600 text-white" : 
+              toastMessage.type === 'error' ? "bg-red-600 text-white" : 
+              "bg-gray-900 text-white"
+            )}
+          >
+            <span>{toastMessage.text}</span>
+            <button onClick={() => setToastMessage(null)} className="p-1 hover:bg-white/20 rounded-full transition-colors">
+              <X size={16} />
+            </button>
+          </motion.div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteConfirmation.isOpen && (
@@ -3480,7 +3705,7 @@ export default function App() {
                     profile={profile}
                     setPendingTransactionType={setPendingTransactionType}
                     setActiveTab={setActiveTab}
-                    addNotification={addNotification}
+                    showToast={showToast}
                   />
                 )}
                 {activeTab === 'summary' && (
@@ -3510,13 +3735,26 @@ export default function App() {
                 {activeTab === 'profile' && (
                   <Profile 
                     profile={profile} 
+                    googleScriptUrl={googleScriptUrl}
+                    setGoogleScriptUrl={setGoogleScriptUrl}
+                    isGoogleConnected={isGoogleConnected}
+                    clearOldConnection={clearOldConnection}
                     onUpdate={async (p) => { 
                       const updatedProfile = { ...profile, ...p };
                       setProfile(updatedProfile); 
                       setActiveTab('dashboard'); 
 
                       // Sync profile to Google Sheets
-                      if (isGoogleConnected) {
+                      if (googleScriptUrl) {
+                        const data = await callGasApi('updateProfile', {
+                          email: profile.email,
+                          name: updatedProfile.name,
+                          avatar: updatedProfile.avatar
+                        });
+                        if (data && data.success) {
+                          showToast('Profile updated via Google Script!', 'success');
+                        }
+                      } else if (isGoogleConnected) {
                         try {
                           const res = await fetch('/api/update-profile', {
                             method: 'POST',
@@ -3529,21 +3767,21 @@ export default function App() {
                             })
                           });
                           if (res.ok) {
-                            addNotification('Profile Sync', 'Profile details updated permanently in Sheets.', 'success');
+                            showToast('Profile updated permanently!', 'success');
                           } else {
-                            addNotification('Profile Sync', 'Profile saved locally, but cloud sync failed.', 'alert');
+                            showToast('Saved locally, but failed to sync with Sheets.', 'info');
                           }
                         } catch (e) {
                           console.error('Failed to update profile on sheet', e);
-                          addNotification('Profile Sync', 'Profile saved locally, but network error during cloud sync.', 'alert');
+                          showToast('Saved locally, but failed to sync with Sheets.', 'info');
                         }
                       } else {
-                        addNotification('Profile Update', 'Profile saved locally successfully!', 'success');
+                        showToast('Profile saved locally!', 'success');
                       }
                     }} 
                     googleTokens={googleTokens} 
                     setGoogleTokens={setGoogleTokens}
-                    addNotification={addNotification} 
+                    showToast={showToast} 
                     onMenuClick={toggleSidebar}
                     notifications={notifications}
                     onMarkRead={markAllNotificationsRead}
@@ -3577,9 +3815,12 @@ export default function App() {
               setIsGoogleConnected(true);
               localStorage.setItem('googleTokens', JSON.stringify(tokens));
             }
-            addNotification('Account Security', 'Password reset successfully! Please sign in with your new credentials.', 'success');
+            showToast('Password reset successfully! Please sign in.', 'success');
             setShowForgotPassword(false);
           }}
+          googleScriptUrl={googleScriptUrl}
+          callGasApi={callGasApi}
+          showToast={showToast}
         />
       ) : (
         <div className="w-full max-w-md mx-auto min-h-screen flex flex-col">
@@ -3618,9 +3859,8 @@ export default function App() {
                     // After successful login sync, fetch budgets and transactions too
                     handleSyncBudgets(googleTokens);
                     handleSyncFromSheet(googleTokens);
-                    addNotification('Login Successful', 'Data successfully synced from Google Sheets.', 'success');
                     setTimeout(() => {
-                      addNotification('Login Successful', 'Welcome back!', 'success');
+                      addNotification('Login Successful', 'Data successfully synced from Google Sheets.', 'success');
                     }, 1000);
                     return true;
                   } else {
@@ -3632,11 +3872,39 @@ export default function App() {
                 }
               }
 
+              // Handle GAS based login/sync if tokens are missing but URL exists
+              if (googleScriptUrl) {
+                try {
+                  const usersData = await callGasApi('fetchUsers');
+                  if (usersData && usersData.users) {
+                    const user = usersData.users.find((u: any) => u.userName === email && u.password === pass);
+                    if (user) {
+                      setIsLoggedIn(true);
+                      localStorage.setItem('financier_app_password', pass);
+                      setProfile({
+                        name: user.profileName || name,
+                        email: email,
+                        avatar: user.imageLink || null
+                      });
+                      
+                      // Sync after successful GAS login
+                      handleSyncBudgets();
+                      handleSyncFromSheet();
+                      
+                      addNotification('Login Successful', 'Data successfully synced from Google Script.', 'success');
+                      return true;
+                    }
+                  }
+                } catch (e) {
+                  console.error('GAS Login failed', e);
+                }
+              }
+
               // Fallback to local check (or if sync failed)
               if (pass === storedPass) {
                 setIsLoggedIn(true);
                 setProfile(p => ({ ...p, name: p.name === 'John Doe' ? name : p.name, email }));
-                addNotification('Login Successful', 'Logged in successfully (Offline Mode).', 'info');
+                showToast('Logged in locally.', 'info');
                 return true;
               } else {
                 return false;

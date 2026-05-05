@@ -1,15 +1,38 @@
-```javascript
 const SS = SpreadsheetApp.getActiveSpreadsheet();
 
+/**
+ * Handle GET requests
+ * NOTE: Do not run this function manually in the editor!
+ */
 function doGet(e) {
+  // Check if e exists (it won't exist if you click "Run" in the editor)
+  if (!e || !e.parameter) {
+    return createResponse({ 
+      error: "This function must be called as a Web App. Please deploy it and use the URL.",
+      status: "error"
+    }, 400);
+  }
+
   const action = e.parameter.action;
-  if (action === 'health') return createResponse({ status: 'ok' });
-  if (action === 'fetchTransactions') return fetchTransactions();
-  if (action === 'fetchBudgets') return fetchBudgets();
-  return createResponse({ error: 'Invalid action' }, 400);
+  try {
+    if (action === 'health') return createResponse({ status: 'ok', message: 'GAS Backend is running' });
+    if (action === 'fetchTransactions') return fetchTransactions();
+    if (action === 'fetchBudgets') return fetchBudgets();
+    return createResponse({ error: 'Invalid action: ' + action }, 400);
+  } catch (err) {
+    return createResponse({ error: err.toString() }, 500);
+  }
 }
 
+/**
+ * Handle POST requests
+ * NOTE: Do not run this function manually in the editor!
+ */
 function doPost(e) {
+  if (!e || !e.postData) {
+    return createResponse({ error: "No post data found. Call this from the app." }, 400);
+  }
+
   let data;
   try {
     data = JSON.parse(e.postData.contents);
@@ -18,16 +41,20 @@ function doPost(e) {
   }
   
   const action = data.action;
-  switch (action) {
-    case 'syncTransaction': return syncTransaction(data.transaction);
-    case 'deleteTransaction': return deleteTransaction(data.transaction);
-    case 'syncUser': return syncUser(data.email, data.password, data.name, data.avatar);
-    case 'updateProfile': return updateProfile(data.email, data.name, data.avatar);
-    case 'resetPassword': return resetPassword(data.email, data.newPassword);
-    case 'fetchTransactions': return fetchTransactions();
-    case 'saveBudgets': return saveBudgets(data.budgets);
-    case 'fetchBudgets': return fetchBudgets();
-    default: return createResponse({ error: 'Invalid action: ' + action }, 400);
+  try {
+    switch (action) {
+      case 'syncTransaction': return syncTransaction(data.transaction);
+      case 'deleteTransaction': return deleteTransaction(data.transaction);
+      case 'syncUser': return syncUser(data.email, data.password, data.name, data.avatar);
+      case 'updateProfile': return updateProfile(data.email, data.name, data.avatar);
+      case 'resetPassword': return resetPassword(data.email, data.newPassword);
+      case 'fetchTransactions': return fetchTransactions();
+      case 'saveBudgets': return saveBudgets(data.budgets);
+      case 'fetchBudgets': return fetchBudgets();
+      default: return createResponse({ error: 'Invalid action: ' + action }, 400);
+    }
+  } catch (err) {
+    return createResponse({ error: err.toString() }, 500);
   }
 }
 
@@ -81,13 +108,8 @@ function deleteTransaction(t) {
   }
   if (rowIndex === -1) return createResponse({ error: 'Transaction not found' }, 404);
   sheet.deleteRow(rowIndex);
-  
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    const remainingValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    for (let i = 0; i < remainingValues.length; i++) sheet.getRange(i + 2, 1).setValue(i + 1);
-  }
-  
+  const remainingValues = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < remainingValues.length; i++) sheet.getRange(i + 2, 1).setValue(i + 1);
   return createResponse({ success: true });
 }
 
@@ -156,4 +178,3 @@ function saveBudgets(budgets) {
   budgets.forEach((b, i) => sheet.appendRow([i + 1, now, b.category, b.amount]));
   return createResponse({ success: true });
 }
-```
